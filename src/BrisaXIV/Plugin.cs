@@ -106,6 +106,15 @@ public sealed partial class Plugin : IDalamudPlugin
         { config.NamePlates = config.CharacterNames; config.Version = 6; PluginInterface.SavePluginConfig(config); }
         if (config.Version < 7)
         { RepairSilencedCategories(); config.Version = 7; PluginInterface.SavePluginConfig(config); }
+        if (config.Version < 8)
+        {
+            // The TXT is only a cache now: a missing text is translated right away, including
+            // client-language text without a Japanese original.
+            config.CachedOnly = false;
+            config.TranslateUnmatched = true;
+            config.Version = 8;
+            PluginInterface.SavePluginConfig(config);
+        }
 #if BRISA_READ_ONLY
         config.BackgroundPreparation = false;
         config.CachedOnly = true;
@@ -235,13 +244,20 @@ public sealed partial class Plugin : IDalamudPlugin
             stored: journal.Append);
     }
 #endif
+    // Only the read-only build (no network code) limits the HUD to the TXT.
+    private bool CachedOnly =>
+#if BRISA_READ_ONLY
+        true;
+#else
+        false;
+#endif
     private bool DialoguePriorityEnabled =>
 #if BRISA_READ_ONLY
         false;
 #else
         config.PrioritizeDialogue && !preparation.Completed;
 #endif
-    private TranslationRouter MakeRouter() => new(queue, file, originals.Texts, config.JapaneseOriginals, config.TranslateUnmatched || !config.JapaneseOriginals ? clientQueue : null, config.CachedOnly || preparation.Completed, DialoguePriorityEnabled,
+    private TranslationRouter MakeRouter() => new(queue, file, originals.Texts, config.JapaneseOriginals, config.TranslateUnmatched || !config.JapaneseOriginals ? clientQueue : null, CachedOnly, DialoguePriorityEnabled,
 #if BRISA_READ_ONLY
         null,
 #else
@@ -298,7 +314,6 @@ public sealed partial class Plugin : IDalamudPlugin
         if (preparation.Completed != completedModeApplied)
         {
             completedModeApplied = preparation.Completed;
-            if (completedModeApplied) { config.CachedOnly = true; PluginInterface.SavePluginConfig(config); }
             router = MakeRouter();
         }
         if (!ClientState.IsLoggedIn) { windows = []; lastDialogues.Clear(); return; }

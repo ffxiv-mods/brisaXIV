@@ -263,6 +263,22 @@ internal static class FallbackRoutingTests
             && !resolvers.TryResolve("Sem japonês", "", out _) && prefetchedSources.Count == 1,
             "Prefetched texts resolve rendered English (any wrapping) to the complete Japanese original after the hovered tooltip");
 
+        // Quest objectives in the HUD can carry icons or be cut with an ellipsis.
+        var objectives = new PrefetchedSources();
+        objectives.Add("Deliver a plumed iron hatchet to Khuswyb.", "羽飾りの鉄斧をクスウィブに納品");
+        objectives.Add("Speak with the Immortal Flames officer at the Hall of Flames.", "不滅隊の士官と話す");
+        objectives.Add("Speak with the Immortal Flames quartermaster.", "不滅隊の補給係と話す");
+        check(objectives.TryResolve("Deliver a plumed iron hatchet  to Khuswyb.", "Missões", out var withIcon) && withIcon == "羽飾りの鉄斧をクスウィブに納品",
+            "A HUD objective with a game icon (HQ mark) still resolves to its Japanese original");
+        check(objectives.TryResolve("Speak with the Immortal Flames officer at the Hall…", "Missões", out var cut) && cut == "不滅隊の士官と話す",
+            "An objective cut with an ellipsis resolves when only one prefetched text starts with it");
+        check(!objectives.TryResolve("Speak with the Immortal Flames...", "Missões", out _) && !objectives.TryResolve("Speak...", "Missões", out _),
+            "An ambiguous or too short cut prefix stays unresolved instead of guessing");
+        var iconIndex = new SourceTextIndex { Ready = true };
+        iconIndex.Add("Report to Momodi.", "モモディに報告", "Missões");
+        check(iconIndex.TryResolve("Report to Momodi.", "Missões", out var indexed) && indexed == "モモディに報告",
+            "The static index also ignores game icons drawn into the HUD text");
+
         // A Japanese line that pulls an item name from another sheet would lose it ("「」"): it is left out.
         var nameMacro = new byte[] { 2, (byte)Lumina.Text.Payloads.MacroCode.JaNoun, 2, 1, 3 }; // length 1 is encoded as 2
         var withItem = System.Text.Encoding.UTF8.GetBytes("「").Concat(nameMacro).Concat(System.Text.Encoding.UTF8.GetBytes("」を届けて")).ToArray();

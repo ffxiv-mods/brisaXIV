@@ -20,7 +20,20 @@ public sealed class PrefetchedSources(int capacity = 20_000) : ISourceTextResolv
         originals[Key(display)] = TextRules.Normalize(japanese);
     }
 
-    public bool TryResolve(string display, string scope, out string japanese) => originals.TryGetValue(Key(display), out japanese!);
+    public bool TryResolve(string display, string scope, out string japanese)
+    {
+        if (originals.TryGetValue(Key(display), out japanese!)) return true;
+        // HUD icons (e.g. the HQ mark) are absent from the evaluated sheet text.
+        if (SourceTextIndex.HasIcons(display) && originals.TryGetValue(Key(SourceTextIndex.WithoutIcons(display)), out japanese!)) return true;
+        // A line the HUD cut with an ellipsis matches when exactly one prefetched text starts with it.
+        if (SourceTextIndex.TryTruncatedKey(TextRules.Normalize(display), out var prefix))
+        {
+            var matches = originals.Where(x => x.Key.StartsWith(prefix, StringComparison.Ordinal)).Select(x => x.Value).Distinct().Take(2).ToArray();
+            if (matches.Length == 1) { japanese = matches[0]; return true; }
+        }
+        japanese = "";
+        return false;
+    }
 }
 
 // Asks each resolver in order; the first match wins.

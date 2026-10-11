@@ -184,7 +184,6 @@ public sealed partial class Plugin
         BeginCard("GeneralSwitches"); ImGui.TextUnformatted("Tradução e originais");
         var changed = ToggleRow("Ativar tradução na HUD", ref config.Enabled);
         var sourceChanged = ToggleRow("Consultar originais japoneses da instalação", ref config.JapaneseOriginals);
-        sourceChanged |= ToggleRow("HUD lê somente o TXT", ref config.CachedOnly);
         sourceChanged |= ToggleRow("Usar idioma atual se não houver original japonês", ref config.TranslateUnmatched);
 #if !BRISA_READ_ONLY
         sourceChanged |= ToggleRow("Priorizar falas e escolhas do NPC", ref config.PrioritizeDialogue);
