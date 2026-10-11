@@ -6,7 +6,7 @@ namespace BrisaXIV;
 [Serializable]
 public sealed class Configuration : IPluginConfiguration
 {
-    public int Version { get; set; } = 6;
+    public int Version { get; set; } = 7;
     public bool Enabled = true;
     public bool NativeHud = true;
     public bool Dialogue = true;

@@ -98,6 +98,8 @@ public sealed partial class Plugin : IDalamudPlugin
         }
         if (config.Version < 6)
         { config.NamePlates = config.CharacterNames; config.Version = 6; PluginInterface.SavePluginConfig(config); }
+        if (config.Version < 7)
+        { RepairSilencedCategories(); config.Version = 7; PluginInterface.SavePluginConfig(config); }
 #if BRISA_READ_ONLY
         config.BackgroundPreparation = false;
         config.CachedOnly = true;
