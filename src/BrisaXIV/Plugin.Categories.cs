@@ -11,13 +11,49 @@ public sealed partial class Plugin
         config.CharacterNames = config.NamePlates = enabled;
         config.Journal = enabled;
         config.Locations = config.Crafting = config.Collections = enabled;
-        foreach (var category in new[] { "Missões", "Itens", "Habilidades", "Menus", "Confirmações", "Outras janelas", "Locais e viagens", "Receitas e fabricação", "Conquistas e coleções" })
-        {
-            config.CategoryTitles[category] = enabled;
-            config.CategoryDescriptions[category] = enabled;
-        }
+        // Title/description choices inherit their main category again. Writing them here (as before)
+        // kept a category silent after "Desativar todas" even when its main toggle was turned back on.
+        config.CategoryTitles.Clear();
+        config.CategoryDescriptions.Clear();
         PluginInterface.SavePluginConfig(config);
     }
+
+    private static readonly string[] PartCategories = ["Missões", "Itens", "Habilidades", "Menus", "Confirmações", "Outras janelas", "Locais e viagens", "Receitas e fabricação", "Conquistas e coleções"];
+
+    // The main toggle that a title/description subdivision belongs to.
+    private bool MainCategoryEnabled(string part) => part switch
+    {
+        "Missões" => config.Quests || (config.Journal ?? config.Quests),
+        "Itens" => config.Items,
+        "Habilidades" => config.Actions,
+        "Menus" => config.Menus,
+        "Confirmações" => config.Confirmations,
+        "Outras janelas" => config.OtherWindows,
+        "Locais e viagens" => config.Locations ?? config.Menus,
+        "Receitas e fabricação" => config.Crafting ?? config.Menus,
+        "Conquistas e coleções" => config.Collections ?? config.Menus,
+        _ => false,
+    };
+
+    // Turning a main category on brings back its title and description, whatever they were set to.
+    private bool ClearPartsOfEnabledCategories(IReadOnlyDictionary<string, bool> before)
+    {
+        var cleared = false;
+        foreach (var part in PartCategories.Where(part => !before[part] && MainCategoryEnabled(part)))
+            cleared |= config.CategoryTitles.Remove(part) | config.CategoryDescriptions.Remove(part);
+        return cleared;
+    }
+
+    // Repairs settings written by the old "Desativar todas": a category that is on with both its title
+    // and description off can only come from it (turning the whole category off is the direct way).
+    private void RepairSilencedCategories()
+    {
+        foreach (var part in PartCategories)
+            if (MainCategoryEnabled(part) && config.CategoryTitles.TryGetValue(part, out var title) && !title
+                && config.CategoryDescriptions.TryGetValue(part, out var description) && !description)
+            { config.CategoryTitles.Remove(part); config.CategoryDescriptions.Remove(part); }
+    }
+
     private void DrawTextCategories()
     {
         ImGui.TextWrapped("As opções são salvas automaticamente. Desligar uma categoria devolve seus textos ao idioma do jogo, sem apagar traduções do TXT ou alterar a preparação do catálogo.");
@@ -25,6 +61,7 @@ public sealed partial class Plugin
         ImGui.SameLine();
         if (ImGui.Button("Desativar todas")) SetAllTextCategories(false);
         var changed = false;
+        var enabledBefore = PartCategories.ToDictionary(part => part, MainCategoryEnabled);
         BeginCard("StoryCategories"); ImGui.TextUnformatted("História e missões");
         changed |= ToggleRow("Falas dos personagens", ref config.Dialogue,
             "Traduz o conteúdo das conversas, os balões sobre personagens, falas de batalha e escolhas durante cenas. Os nomes dos NPCs continuam no idioma original.");
@@ -73,11 +110,12 @@ public sealed partial class Plugin
             "Controla conquistas, montarias, mascotes, guia de pesca e diário de exploração nas janelas compatíveis. Detalhes de itens continuam seguindo Itens."))
         { config.Collections = collections; changed = true; }
         EndCard();
+        changed |= ClearPartsOfEnabledCategories(enabledBefore);
         if (changed) PluginInterface.SavePluginConfig(config);
         BeginCard("CategoryParts");
         ImGui.TextUnformatted("Título e descrição por categoria");
         ImGui.TextWrapped("A categoria principal precisa estar ligada. Título controla cabeçalhos identificados; descrição controla os demais textos da tela, incluindo rótulos e botões. Campos sem identificação segura permanecem em descrição.");
-        foreach (var category in new[] { "Missões", "Itens", "Habilidades", "Menus", "Confirmações", "Outras janelas", "Locais e viagens", "Receitas e fabricação", "Conquistas e coleções" })
+        foreach (var category in PartCategories)
         {
             ImGui.PushID(category);
             if (ImGui.CollapsingHeader(category))
