@@ -55,7 +55,7 @@ internal sealed unsafe class NativeTextLayout
         }
         if (ConfirmationPrompt(addon, manager, text, addonName))
             return TryPrepareConfirmation(addon, manager, text, original, translation, out result);
-        if (addonName is "ActionDetail" or "ItemDetail") return TryPrepareTooltip(addon, text, original, translation, addonName == "ActionDetail", out result);
+        if (addonName is "ActionDetail" or "ItemDetail") return TryPrepareTooltip(addon, text, original, translation, out result);
         if ((!dialogue && !text->TextFlags.HasFlag(TextFlags.MultiLine)) || text->Width < 60)
         { result = FitSingleLine(text, plain); return true; }
 
@@ -211,154 +211,151 @@ internal sealed unsafe class NativeTextLayout
         return true;
     }
 
-    // Tooltips are sized by the game for the English text before PreDraw. The translation is
-    // wrapped to the space inside the window. In the action tooltip, a taller text makes the window,
-    // its background and everything below it grow or move down by the same amount. The item tooltip
-    // is shared with other plugins (e.g. PriceInsight adds market rows with relative offsets), so
-    // there only the text's own font shrinks to fit the space the game reserved. Restore undoes all.
-    private static bool TryPrepareTooltip(AtkUnitBase* addon, AtkTextNode* text, ReadOnlySeStringSpan original, string translation, bool growWindow, out Result result)
+    // Tooltips are sized by the game for the English text before PreDraw. The translation is wrapped
+    // to the space inside the window; when it is taller, the window, the frames around the text and
+    // the rows below it grow or move down. Like other tooltip plugins (e.g. PriceInsight), the growth
+    // is applied as relative deltas recorded per text, re-applied only when the needed height changes,
+    // and undone before the game updates the tooltip (UndoTooltip) or when the text is released.
+    // The text node's own changes travel in its Result and are restored like any other text.
+    private static bool TryPrepareTooltip(AtkUnitBase* addon, AtkTextNode* text, ReadOnlySeStringSpan original, string translation, out Result result)
     {
         result = null!;
-        var manager = &addon->UldManager;
-        var nodes = LiveNodes(manager);
+        var nodes = LiveNodes(&addon->UldManager);
         var root = addon->RootNode;
         if (nodes == null || root == null || !nodes.Contains((nint)root) || root->Width > 2000 || !IsInside((AtkResNode*)text, root)) return false;
-        // Every size below comes from the game's own layout for this text, recorded the first time:
-        // re-applying after the game refreshes part of the window sets the same values instead of
-        // adding the growth again (which made the tooltip climb up the screen).
-        var key = ((nint)addon, (nint)text, NativeTextContent.Extract(original));
-        if (!tooltipBaselines.TryGetValue(key, out var baseline) || !baseline.Matches(nodes))
-        {
-            if (tooltipBaselines.Count > 128) tooltipBaselines.Clear();
-            tooltipBaselines[key] = baseline = TooltipBaseline.Capture(root, text, original, nodes);
-        }
-        var insideX = LocalX((AtkResNode*)text, root);
-        var available = (int)(root->Width - insideX - 14);
+        var before = Snapshot((AtkResNode*)text);
+        var available = (int)(root->Width - LocalX((AtkResNode*)text, root) - 14);
         var description = text->TextFlags.HasFlag(TextFlags.MultiLine) || text->TextFlags.HasFlag(TextFlags.WordWrap) || translation.Length >= 40;
-        var flags = baseline.Text.Flags ?? text->TextFlags;
-        var font = baseline.Text.FontSize ?? text->FontSize;
-        var minimumFont = (byte)Math.Max(9, font * 3 / 4);
-        // The game sizes the window from the English content, which can be shorter than its node.
-        // A few pixels of slack keep the last line inside the frame.
-        var space = Math.Min(baseline.Text.Height, baseline.ContentHeight + 2);
-        var touched = new List<State> { baseline.Text };
-        // A short label (cast, recast, cost) that fits before the window's right edge keeps its slot;
-        // in the item tooltip a wider one shrinks instead of wrapping.
+        var flags = text->TextFlags;
+        // A short label (cast, recast, cost) that fits before the window's right edge keeps its slot.
         if (!description && !translation.Contains('\n') && NativeTextContent.TryReplace(original, translation, out var label))
         {
             ushort labelWidth = 0, labelHeight = 0;
-            for (var size = font; ; size--)
+            fixed (byte* pointer = label) text->GetTextDrawSize(&labelWidth, &labelHeight, pointer);
+            if (labelWidth <= available)
             {
-                text->FontSize = size;
-                fixed (byte* pointer = label) text->GetTextDrawSize(&labelWidth, &labelHeight, pointer);
-                if (labelWidth <= available || growWindow || size <= minimumFont) break;
-            }
-            if (labelWidth <= available || !growWindow)
-            {
-                if (labelWidth > available) text->TextFlags = flags | TextFlags.Ellipsis;
-                text->IsDirty = true;
-                result = new(label, Rendered(label), Changes(touched, root));
+                Grow(addon, root, text, nodes, 0);
+                result = new(label, Rendered(label), []);
                 return true;
             }
-            text->FontSize = font;
         }
         // Descriptions wrap in their own width; an overlong label wraps in the space left in the window.
-        var width = description ? Math.Min(Math.Max((int)baseline.Text.Width, 60), available) : available;
+        var width = description ? Math.Min(Math.Max((int)text->Width, 60), available) : available;
         if (width < 60) return false;
+        // Height of the English text as the game laid it out, with the node's own wrapping flags:
+        // the game sized the window from this content, which can be shorter than the node.
+        var englishBytes = new byte[original.Data.Length + 1];
+        original.Data.CopyTo(englishBytes);
+        ushort englishWidth = 0, englishHeight = 0;
+        fixed (byte* pointer = englishBytes) text->GetTextDrawSize(&englishWidth, &englishHeight, pointer);
+        var space = Math.Min((int)text->Height, englishHeight > 0 ? englishHeight + 2 : text->Height);
         byte[] bytes;
-        int required;
+        ushort measuredWidth = 0, measuredHeight = 0;
         try
         {
             text->TextFlags = (flags | TextFlags.MultiLine) & ~(TextFlags.WordWrap | TextFlags.Ellipsis | TextFlags.AutoAdjustNodeSize);
             var textAddress = (nint)text;
-            for (var size = font; ; size--)
+            var wrapped = TextBoxLayout.Wrap(translation, width - 2, value =>
             {
-                text->FontSize = size;
-                var wrapped = TextBoxLayout.Wrap(translation, width - 2, value =>
-                {
-                    var candidate = NativeTextContent.EncodePlain(value); ushort w = 0, h = 0;
-                    fixed (byte* pointer = candidate) ((AtkTextNode*)textAddress)->GetTextDrawSize(&w, &h, pointer);
-                    return w;
-                });
-                if (!NativeTextContent.TryReplace(original, wrapped, out bytes)) { text->FontSize = font; return false; }
-                ushort measuredWidth = 0, measuredHeight = 0;
-                fixed (byte* pointer = bytes) text->GetTextDrawSize(&measuredWidth, &measuredHeight, pointer);
-                required = Math.Max(measuredHeight + 2, size + 2);
-                if (growWindow || required + 4 <= space || size <= minimumFont) break;
-            }
+                var candidate = NativeTextContent.EncodePlain(value); ushort w = 0, h = 0;
+                fixed (byte* pointer = candidate) ((AtkTextNode*)textAddress)->GetTextDrawSize(&w, &h, pointer);
+                return w;
+            });
+            if (!NativeTextContent.TryReplace(original, wrapped, out bytes)) return false;
+            fixed (byte* pointer = bytes) text->GetTextDrawSize(&measuredWidth, &measuredHeight, pointer);
         }
         finally { text->TextFlags = flags; }
-        if (required > 1200) { text->FontSize = font; return false; }
-        var extra = growWindow ? TextBoxLayout.ExtraHeight(required + 4, space) : 0;
-        if (extra > 600) return false;
-        if (extra > 0)
-        {
-            // The game's resize routine keeps the unit's collision bounds in step with the root.
-            if (root->Height != baseline.Root.Height + extra) addon->SetSize(root->Width, (ushort)(baseline.Root.Height + extra));
-            touched.Add(baseline.Root);
-            foreach (var state in baseline.Containers) { ((AtkResNode*)state.Address)->SetHeight((ushort)(state.Height + extra)); touched.Add(state); }
-            foreach (var state in baseline.Below) { ((AtkResNode*)state.Address)->SetYFloat(state.Y + extra); touched.Add(state); }
-            // A taller tooltip near the bottom of the screen moves up instead of being cut off.
-            var device = Device.Instance();
-            var bottom = addon->Y + root->Height * addon->Scale;
-            if (device != null && device->Height > 0 && bottom > device->Height - 8)
-                addon->SetPosition(addon->X, (short)Math.Max(0, addon->Y - (bottom - (device->Height - 8))));
-        }
-        text->SetWidth((ushort)width);
-        // Without window growth the node keeps the game's height, so nothing below it is overlapped.
-        text->SetHeight(growWindow ? (ushort)required : baseline.Text.Height);
+        var required = Math.Max((int)measuredHeight + 2, text->FontSize + 2);
+        // A few pixels of slack keep the last line inside the frame.
+        var extra = TextBoxLayout.ExtraHeight(required + 4, space);
+        if (required > 1200 || extra > 600) return false;
+        Grow(addon, root, text, nodes, extra);
+        text->SetWidth((ushort)width); text->SetHeight((ushort)required);
         text->TextFlags = (flags | TextFlags.MultiLine) & ~(TextFlags.WordWrap | TextFlags.Ellipsis | TextFlags.AutoAdjustNodeSize);
         text->IsDirty = true;
-        result = new(bytes, Rendered(bytes), Changes(touched, root));
+        result = new(bytes, Rendered(bytes), [new(before, Snapshot((AtkResNode*)text))]);
         return true;
     }
 
-    private static Change[] Changes(List<State> touched, AtkResNode* root)
+    // Window growth owned by one tooltip text: the deltas it added to each node and to the window.
+    private sealed class Growth(nint addon)
     {
-        var changes = new List<Change>();
-        foreach (var state in touched)
-        {
-            var after = Snapshot((AtkResNode*)state.Address);
-            // The root's position is the game's to manage; only its size is ours to undo.
-            var originalState = state.Address == (nint)root ? state with { X = after.X, Y = after.Y } : state;
-            if (originalState != after) changes.Add(new(originalState, after, state.Address == (nint)root));
-        }
-        return changes.ToArray();
+        public nint Addon { get; } = addon;
+        public int Extra;
+        public int Window;
+        public readonly Dictionary<nint, (uint Id, float Y, int Height)> Nodes = new();
     }
+    private static readonly Dictionary<nint, Growth> growths = new();
 
-    private static readonly Dictionary<(nint Addon, nint Text, string Source), TooltipBaseline> tooltipBaselines = new();
-
-    // The game's layout of one tooltip text: its node, the root, the frames around it and the
-    // top-level rows below it, all classified in coordinates local to the root.
-    private sealed record TooltipBaseline(State Text, State Root, State[] Containers, State[] Below, int ContentHeight)
+    private static void Grow(AtkUnitBase* addon, AtkResNode* root, AtkTextNode* text, HashSet<nint> nodes, int extra)
     {
-        public bool Matches(HashSet<nint> nodes) => Containers.Concat(Below).Append(Text).Append(Root)
-            .All(state => nodes.Contains(state.Address) && ((AtkResNode*)state.Address)->NodeId == state.Id);
-
-        public static TooltipBaseline Capture(AtkResNode* root, AtkTextNode* text, ReadOnlySeStringSpan original, HashSet<nint> nodes)
+        if (!growths.TryGetValue((nint)text, out var growth))
         {
-            var textNode = (AtkResNode*)text;
-            var textTop = LocalY(textNode, root);
-            var textBottom = textTop + text->Height;
-            var containers = new List<State>(); var below = new List<State>();
-            foreach (var address in nodes)
+            if (extra == 0) return;
+            growths[(nint)text] = growth = new((nint)addon);
+        }
+        var delta = extra - growth.Extra;
+        if (delta == 0) return;
+        var textNode = (AtkResNode*)text;
+        var textTop = LocalY(textNode, root);
+        var textBottom = textTop + text->Height;
+        foreach (var address in nodes)
+        {
+            var node = (AtkResNode*)address;
+            if (node == textNode || node == root || node->Height == 0 || !IsInside(node, root)) continue;
+            var top = LocalY(node, root);
+            growth.Nodes.TryGetValue(address, out var applied);
+            // Frames around the text grow with it; rows that start below it move down.
+            // Moving a parent already moves its children, so only the outermost row moves.
+            if (top <= textTop + 1 && top + node->Height >= textBottom - 1)
             {
-                var node = (AtkResNode*)address;
-                if (node == textNode || node == root || node->Height == 0 || !IsInside(node, root)) continue;
-                var top = LocalY(node, root);
-                // Frames around the description grow with it; rows that start below it move down.
-                // Moving a parent already moves its children, so only the outermost row moves.
-                if (top <= textTop + 1 && top + node->Height >= textBottom - 1) containers.Add(Snapshot(node));
-                else if (top >= textBottom - 1 && (node->ParentNode == root || LocalY(node->ParentNode, root) < textBottom - 1)) below.Add(Snapshot(node));
+                node->SetHeight((ushort)Math.Max(0, node->Height + delta));
+                growth.Nodes[address] = (node->NodeId, applied.Y, applied.Height + delta);
             }
-            // Height of the English text as the game lays it out, with the node's own wrapping flags.
-            var bytes = new byte[original.Data.Length + 1];
-            original.Data.CopyTo(bytes);
-            ushort contentWidth = 0, contentHeight = 0;
-            fixed (byte* pointer = bytes) text->GetTextDrawSize(&contentWidth, &contentHeight, pointer);
-            return new(Snapshot(textNode), Snapshot(root), containers.ToArray(), below.ToArray(), contentHeight > 0 ? contentHeight : text->Height);
+            else if (top >= textBottom - 1 && (node->ParentNode == root || LocalY(node->ParentNode, root) < textBottom - 1))
+            {
+                node->SetYFloat(node->Y + delta);
+                growth.Nodes[address] = (node->NodeId, applied.Y + delta, applied.Height);
+            }
         }
+        // The game's resize routine keeps the unit's collision bounds in step with the root.
+        addon->SetSize(root->Width, (ushort)Math.Max(1, root->Height + delta));
+        growth.Window += delta;
+        growth.Extra = extra;
+        // A taller tooltip near the bottom of the screen moves up instead of being cut off.
+        var device = Device.Instance();
+        var bottom = addon->Y + root->Height * addon->Scale;
+        if (delta > 0 && device != null && device->Height > 0 && bottom > device->Height - 8)
+            addon->SetPosition(addon->X, (short)Math.Max(0, addon->Y - (bottom - (device->Height - 8))));
     }
+
+    // Undoes one text's window growth, e.g. when its translation is removed or replaced by new text.
+    public static void ReleaseGrowth(AtkUnitBase* addon, nint text)
+    {
+        if (!growths.Remove(text, out var growth)) return;
+        if (addon == null || growth.Addon != (nint)addon) return;
+        var nodes = LiveNodes(&addon->UldManager);
+        if (nodes == null) return;
+        foreach (var (address, (id, y, height)) in growth.Nodes)
+        {
+            if (!nodes.Contains(address)) continue;
+            var node = (AtkResNode*)address;
+            if (node->NodeId != id) continue;
+            if (y != 0) node->SetYFloat(node->Y - y);
+            if (height != 0) node->SetHeight((ushort)Math.Max(0, node->Height - height));
+        }
+        if (addon->RootNode != null && growth.Window != 0)
+            addon->SetSize(addon->RootNode->Width, (ushort)Math.Max(1, addon->RootNode->Height - growth.Window));
+    }
+
+    // Before the game updates a tooltip it reads its current layout, so every growth on it is undone first.
+    public static void UndoTooltip(AtkUnitBase* addon)
+    {
+        foreach (var text in growths.Where(x => x.Value.Addon == (nint)addon).Select(x => x.Key).ToArray()) ReleaseGrowth(addon, text);
+    }
+
+    // A text node that vanished with its window is forgotten without touching its memory.
+    public static void ForgetGrowth(nint text) => growths.Remove(text);
 
     private static bool IsInside(AtkResNode* node, AtkResNode* root)
     {

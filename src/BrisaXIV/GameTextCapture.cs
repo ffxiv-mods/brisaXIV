@@ -92,7 +92,7 @@ internal sealed unsafe class GameTextCapture
                 output.Add(new(name, Label(name), category!, texts));
             }
         }
-        foreach (var address in applied.Keys.Where(x => !live.Contains(x)).ToArray()) applied.Remove(address);
+        foreach (var address in applied.Keys.Where(x => !live.Contains(x)).ToArray()) { applied.Remove(address); NativeTextLayout.ForgetGrowth(address); }
         foreach (var address in lastSource.Keys.Where(x => !live.Contains(x)).ToArray()) { lastSource.Remove(address); since.Remove(address); presentations.Remove(address); }
         return output.OrderBy(x => x.Category == "Falas" ? 0 : 1).ThenBy(x => x.Name).ToArray();
     }
@@ -151,7 +151,7 @@ internal sealed unsafe class GameTextCapture
                         {
                             textNode->SetText(saved.OriginalBytes.AsSpan());
                             NativeTextLayout.Restore(addon, manager, saved.Layout);
-                            applied.Remove(address);
+                            applied.Remove(address); NativeTextLayout.ReleaseGrowth(addon, address);
                             saved = null;
                         }
                         // Tooltips are hidden and reused between hovers, not faded out: rewriting there
@@ -171,7 +171,7 @@ internal sealed unsafe class GameTextCapture
                     else
                     {
                         if ((active || restoreNode) && saved.AddonId == addonId && saved.NodeId == node->NodeId) NativeTextLayout.Restore(addon, manager, saved.Layout);
-                        applied.Remove(address); // The game populated a new line or reused a node.
+                        applied.Remove(address); NativeTextLayout.ReleaseGrowth(addon, address); // The game populated a new line or reused a node.
                         saved = null;
                     }
                 }
@@ -212,7 +212,7 @@ internal sealed unsafe class GameTextCapture
                         {
                             textNode->SetText(saved.OriginalBytes.AsSpan());
                             NativeTextLayout.Restore(addon, manager, saved.Layout);
-                            applied.Remove(address);
+                            applied.Remove(address); NativeTextLayout.ReleaseGrowth(addon, address);
                         }
                         continue;
                     }
@@ -231,6 +231,7 @@ internal sealed unsafe class GameTextCapture
                     category == "Falas", addonName, out var layout))
                 {
                     if (saved != null) { textNode->SetText(original.AsSpan()); applied.Remove(address); }
+                    NativeTextLayout.ReleaseGrowth(addon, address);
                     if (diagnose)
                         Diagnostics!.Record(address, "layout-recusado", addonName,
                             $"origem={HudDiagnostics.Quote(source)} largura={node->Width} altura={node->Height} flags={textNode->TextFlags} texto-ok={NativeTextContent.CanReplace(seString)}");
@@ -247,6 +248,21 @@ internal sealed unsafe class GameTextCapture
                     Walk(addon, &component->UldManager, addonId, addonName, active, native, restore, showLoading, maximumWait, router, category, priority, config, lines, visited, depth + 1,
                         component->GetComponentType() == ComponentType.Window, ref budget);
             }
+        }
+    }
+
+    // Before the game updates a tooltip it lays it out again from the current nodes, so every change
+    // the translation made there is undone first, as other tooltip plugins do (e.g. PriceInsight).
+    // The next draw translates the new content from a clean layout.
+    public void BeforeTooltipUpdate(nint addonAddress)
+    {
+        var addon = (AtkUnitBase*)addonAddress;
+        if (addon == null || !Tooltip(addon->NameString)) return;
+        NativeTextLayout.UndoTooltip(addon);
+        foreach (var (address, saved) in applied.Where(x => x.Value.AddonId == addon->Id).ToArray())
+        {
+            NativeTextLayout.Restore(addon, &addon->UldManager, saved.Layout);
+            applied.Remove(address);
         }
     }
 
