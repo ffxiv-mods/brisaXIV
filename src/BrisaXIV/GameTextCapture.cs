@@ -40,19 +40,23 @@ internal sealed unsafe class GameTextCapture
         return false;
     }
 
+    // apply: the Talk window is active, even while it is still hidden by its opening animation.
+    // visible: the line is on screen and belongs in the reading panel.
     private void KeepInjected(AtkUnitBase* addon, AtkUldManager* manager, AtkTextNode* textNode, nint address, ushort addonId, string addonName,
-        string current, string source, ReadOnlySpan<byte> bytes, bool show, List<(float Y, float X, string Text)> lines)
+        string current, string source, ReadOnlySpan<byte> bytes, bool apply, bool visible, List<(float Y, float X, string Text)> lines)
     {
         var node = (AtkResNode*)textNode;
-        if (show) lines.Add((node->ScreenY, node->ScreenX, source));
+        if (visible) lines.Add((node->ScreenY, node->ScreenX, source));
         if (applied.TryGetValue(address, out var saved))
         {
-            if (show && saved.Rendered == current && NativeTextLayout.IsCurrent(manager, saved.Layout)) return;
+            // Hiding or showing the box is not a new line: the fitted layout stays as it is.
+            if (saved.Rendered == current && NativeTextLayout.IsCurrent(manager, saved.Layout)) return;
             NativeTextLayout.Restore(addon, manager, saved.Layout);
             applied.Remove(address);
         }
+        // The line is fitted before the box first appears, so the game's own wrap is never shown.
         // The speaker name keeps the game's layout; the line adapts its font and box to fit.
-        if (!show || DialoguePresentation.IsSpeakerName(addonName, node->NodeId)
+        if (!apply || DialoguePresentation.IsSpeakerName(addonName, node->NodeId)
             || !NativeTextLayout.TryFitInjectedDialogue(manager, textNode, addonName, out var changes)) return;
         var injectedBytes = new byte[bytes.Length + 1];
         bytes.CopyTo(injectedBytes);
@@ -176,7 +180,7 @@ internal sealed unsafe class GameTextCapture
                 // only fitted to its box, and shown with its original in the reading panel.
                 if (addonName == "Talk" && Injected?.TryGetOriginal(current, out var injectedSource) == true)
                 {
-                    KeepInjected(addon, manager, textNode, address, addonId, addonName, current, injectedSource, bytes, active && native && Visible(node), lines);
+                    KeepInjected(addon, manager, textNode, address, addonId, addonName, current, injectedSource, bytes, active && native, active && native && Visible(node), lines);
                     continue;
                 }
                 var source = current;
