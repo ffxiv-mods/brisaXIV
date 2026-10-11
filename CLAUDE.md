@@ -23,7 +23,9 @@ Brisa XIV é um plugin Dalamud (API 15, .NET 10, Windows x64) que traduz textos 
 - O projeto de testes compila só `Core/*.cs` e alguns arquivos da raiz (`KeyProtection`, `NativeTextContent`, `NativeTextLayout`, `JapaneseSourceIndex`) — não referencia Dalamud. Código testável deve ficar em `Core/` sem dependência de serviços Dalamud; se criar um novo arquivo fora de `Core/` que precise de teste, adicione-o ao `<Compile Include>` de `tests/BrisaXIV.Tests.csproj`.
 - Testes usam HTTP simulado e arquivos isolados; nunca chamam provedores reais.
 
-Outros scripts: `Instalar-No-Dalamud.ps1` (registra `plugin\BrisaXIV.dll` em DevPluginLoadLocations; exige o jogo fechado), `Restaurar-TXT-Inicial.ps1` (recompõe `data/traducoes-iniciais.zip.*` sem sobrescrever TXT existente), `Preparar-Publicacao.ps1` (gera `publicacao/<versão>/` com allowlist explícita de arquivos), `Gerar-Somente-Leitura.ps1` (build final somente leitura).
+Outros scripts: `Instalar-No-Dalamud.ps1` (registra `plugin\BrisaXIV.dll` em DevPluginLoadLocations; exige o jogo fechado), `Restaurar-TXT-Inicial.ps1` (recompõe `data/traducoes-iniciais.zip.*` sem sobrescrever TXT existente), `Empacotar-Release.ps1` (gera `release/latest.zip` + `release/repo.json`), `Gerar-Somente-Leitura.ps1` (build final somente leitura). `Preparar-Publicacao.ps1` é o fluxo manual antigo (repo `BrisasXIV/BrisasXIV`), substituído pelo workflow.
+
+**Release:** `.github/workflows/release.yml` publica somente a partir de push na `master`. Ele baixa o Dalamud de `goatcorp.github.io/dalamud-distrib/latest.zip`, roda `Compilar.ps1` e `Empacotar-Release.ps1` e cria a release `v<Version>` com `latest.zip` e `repo.json`. Se a tag já existir, não faz nada. O Dalamud usa `https://github.com/ffxiv-mods/brisaXIV/releases/latest/download/repo.json`. Para publicar, aumente `<Version>` no csproj **e** `AssemblyVersion` em `src/BrisaXIV/BrisaXIV.json` (o workflow falha se divergirem). Detalhes em `PUBLICAR.md`.
 
 ## Arquitetura
 
@@ -52,4 +54,4 @@ Outros scripts: `Instalar-No-Dalamud.ps1` (registra `plugin\BrisaXIV.dll` em Dev
 
 ## Versão
 
-A versão aparece em `src/BrisaXIV/BrisaXIV.csproj` (`<Version>`), `README.md`, `LEIA-ME.md` e `PUBLICAR.md` (tag da release); mantenha-as sincronizadas ao subir versão.
+A versão aparece em `src/BrisaXIV/BrisaXIV.csproj` (`<Version>`), `src/BrisaXIV/BrisaXIV.json` (`AssemblyVersion`, obrigatório para o release), `README.md` e `LEIA-ME.md`. Mantenha todas sincronizadas ao subir versão.

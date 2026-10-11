@@ -24,6 +24,6 @@ As estimativas usam preços editáveis, com distinção de cache, escrita de cac
 
 `custos-ia.json` é um relatório de custos da conta/projeto/chave consultado separadamente. A consulta usa credencial administrativa própria, endpoint oficial fixo, redirecionamentos desativados, períodos UTC, limite de páginas e respeito a `Retry-After`. Não publique esse relatório. Falhas de consulta não interrompem traduções. Custos da conta podem incluir outros programas; um zero informado não garante ausência de cobranças futuras.
 
-Para empacotar, execute `Preparar-Publicacao.ps1`. A exportação tem uma lista explícita de arquivos permitidos, separa fonte e anexo instalável e exclui PDBs, configuração, segredos e dados pessoais. O TXT inicial é uma fotografia das linhas completas na hora de exportar, sem bloquear a gravação da instância ativa. Depois, siga `PUBLICAR.md`.
+As releases são geradas automaticamente pelo workflow `.github/workflows/release.yml`, somente a partir da `master`. Para empacotar localmente, execute `Empacotar-Release.ps1` depois de `Compilar.ps1`. O pacote contém apenas DLL, manifesto e TXT; ficam de fora PDBs, configuração, segredos e dados pessoais. Veja `PUBLICAR.md`.
 
 Na instalação normal, o plugin usa `PluginInterface.GetPluginConfigDirectory()` para dados persistentes. Na instalação de desenvolvimento mantém o diretório da DLL. O TXT do pacote é importado somente se ainda não houver um TXT ou sua cópia `.bak`; atualizações não substituem traduções pessoais.

@@ -4,7 +4,7 @@
   "InternalName": "BrisaXIV",
   "AssemblyVersion": "0.8.4.0",
   "Description": "Tradução para PT-BR na HUD, com TXT permanente e preparação por expansão. Nova interface lateral, progresso, custos estimados da IA por tokens e consulta administrativa opcional à OpenAI. Alerta de créditos/cota e pendências automáticas. OpenAI GPT-6 Luna, DeepL, Google e Ollama. Versão experimental.",
-  "RepoUrl": "https://github.com/BrisasXIV/BrisasXIV",
+  "RepoUrl": "https://github.com/ffxiv-mods/brisaXIV",
   "Punchline": "Leia textos japoneses em português do Brasil.",
   "ApplicableVersion": "any",
   "DalamudApiLevel": 15,
