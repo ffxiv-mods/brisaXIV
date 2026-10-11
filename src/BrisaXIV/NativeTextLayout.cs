@@ -55,7 +55,7 @@ internal sealed unsafe class NativeTextLayout
         }
         if (ConfirmationPrompt(addon, manager, text, addonName))
             return TryPrepareConfirmation(addon, manager, text, original, translation, out result);
-        if (addonName is "ActionDetail" or "ItemDetail") return TryPrepareTooltip(addon, text, original, translation, out result);
+        if (addonName is "ActionDetail" or "ItemDetail") return TryPrepareTooltip(addon, text, original, translation, addonName == "ActionDetail", out result);
         if ((!dialogue && !text->TextFlags.HasFlag(TextFlags.MultiLine)) || text->Width < 60)
         { result = FitSingleLine(text, plain); return true; }
 
@@ -212,47 +212,17 @@ internal sealed unsafe class NativeTextLayout
     }
 
     // Tooltips are sized by the game for the English text before PreDraw. The translation is
-    // wrapped to the space inside the window; when it is taller, the window, its background and
-    // everything below the text grow or move down by the same amount. Restore undoes all of it.
-    private static bool TryPrepareTooltip(AtkUnitBase* addon, AtkTextNode* text, ReadOnlySeStringSpan original, string translation, out Result result)
+    // wrapped to the space inside the window. In the action tooltip, a taller text makes the window,
+    // its background and everything below it grow or move down by the same amount. The item tooltip
+    // is shared with other plugins (e.g. PriceInsight adds market rows with relative offsets), so
+    // there only the text's own font shrinks to fit the space the game reserved. Restore undoes all.
+    private static bool TryPrepareTooltip(AtkUnitBase* addon, AtkTextNode* text, ReadOnlySeStringSpan original, string translation, bool growWindow, out Result result)
     {
         result = null!;
         var manager = &addon->UldManager;
         var nodes = LiveNodes(manager);
         var root = addon->RootNode;
         if (nodes == null || root == null || !nodes.Contains((nint)root) || root->Width > 2000 || !IsInside((AtkResNode*)text, root)) return false;
-        var insideX = LocalX((AtkResNode*)text, root);
-        var available = (int)(root->Width - insideX - 14);
-        var description = text->TextFlags.HasFlag(TextFlags.MultiLine) || text->TextFlags.HasFlag(TextFlags.WordWrap) || translation.Length >= 40;
-        var flags = text->TextFlags;
-        // A short label (cast, recast, cost) that fits before the window's right edge keeps its slot.
-        if (!description && !translation.Contains('\n') && NativeTextContent.TryReplace(original, translation, out var label))
-        {
-            ushort labelWidth = 0, labelHeight = 0;
-            fixed (byte* pointer = label) text->GetTextDrawSize(&labelWidth, &labelHeight, pointer);
-            if (labelWidth <= available) { result = new(label, NativeTextContent.Extract(new ReadOnlySeStringSpan(label.AsSpan(0, label.Length - 1))), []); return true; }
-        }
-        // Descriptions wrap in their own width; an overlong label wraps in the space left in the window.
-        var width = description ? Math.Min(Math.Max((int)text->Width, 60), available) : available;
-        if (width < 60) return false;
-        byte[] bytes;
-        ushort measuredWidth = 0, measuredHeight = 0;
-        try
-        {
-            text->TextFlags = (flags | TextFlags.MultiLine) & ~(TextFlags.WordWrap | TextFlags.Ellipsis | TextFlags.AutoAdjustNodeSize);
-            var textAddress = (nint)text;
-            var wrapped = TextBoxLayout.Wrap(translation, width - 2, value =>
-            {
-                var candidate = NativeTextContent.EncodePlain(value); ushort w = 0, h = 0;
-                fixed (byte* pointer = candidate) ((AtkTextNode*)textAddress)->GetTextDrawSize(&w, &h, pointer);
-                return w;
-            });
-            if (!NativeTextContent.TryReplace(original, wrapped, out bytes)) return false;
-            fixed (byte* pointer = bytes) text->GetTextDrawSize(&measuredWidth, &measuredHeight, pointer);
-        }
-        finally { text->TextFlags = flags; }
-        var required = Math.Max((int)measuredHeight + 2, text->FontSize + 2);
-        if (required > 1200) return false;
         // Every size below comes from the game's own layout for this text, recorded the first time:
         // re-applying after the game refreshes part of the window sets the same values instead of
         // adding the growth again (which made the tooltip climb up the screen).
@@ -262,11 +232,65 @@ internal sealed unsafe class NativeTextLayout
             if (tooltipBaselines.Count > 128) tooltipBaselines.Clear();
             tooltipBaselines[key] = baseline = TooltipBaseline.Capture(root, text, original, nodes);
         }
+        var insideX = LocalX((AtkResNode*)text, root);
+        var available = (int)(root->Width - insideX - 14);
+        var description = text->TextFlags.HasFlag(TextFlags.MultiLine) || text->TextFlags.HasFlag(TextFlags.WordWrap) || translation.Length >= 40;
+        var flags = baseline.Text.Flags ?? text->TextFlags;
+        var font = baseline.Text.FontSize ?? text->FontSize;
+        var minimumFont = (byte)Math.Max(9, font * 3 / 4);
         // The game sizes the window from the English content, which can be shorter than its node.
         // A few pixels of slack keep the last line inside the frame.
-        var extra = TextBoxLayout.ExtraHeight(required + 4, Math.Min(baseline.Text.Height, baseline.ContentHeight + 2));
-        if (extra > 600) return false;
+        var space = Math.Min(baseline.Text.Height, baseline.ContentHeight + 2);
         var touched = new List<State> { baseline.Text };
+        // A short label (cast, recast, cost) that fits before the window's right edge keeps its slot;
+        // in the item tooltip a wider one shrinks instead of wrapping.
+        if (!description && !translation.Contains('\n') && NativeTextContent.TryReplace(original, translation, out var label))
+        {
+            ushort labelWidth = 0, labelHeight = 0;
+            for (var size = font; ; size--)
+            {
+                text->FontSize = size;
+                fixed (byte* pointer = label) text->GetTextDrawSize(&labelWidth, &labelHeight, pointer);
+                if (labelWidth <= available || growWindow || size <= minimumFont) break;
+            }
+            if (labelWidth <= available || !growWindow)
+            {
+                if (labelWidth > available) text->TextFlags = flags | TextFlags.Ellipsis;
+                text->IsDirty = true;
+                result = new(label, Rendered(label), Changes(touched, root));
+                return true;
+            }
+            text->FontSize = font;
+        }
+        // Descriptions wrap in their own width; an overlong label wraps in the space left in the window.
+        var width = description ? Math.Min(Math.Max((int)baseline.Text.Width, 60), available) : available;
+        if (width < 60) return false;
+        byte[] bytes;
+        int required;
+        try
+        {
+            text->TextFlags = (flags | TextFlags.MultiLine) & ~(TextFlags.WordWrap | TextFlags.Ellipsis | TextFlags.AutoAdjustNodeSize);
+            var textAddress = (nint)text;
+            for (var size = font; ; size--)
+            {
+                text->FontSize = size;
+                var wrapped = TextBoxLayout.Wrap(translation, width - 2, value =>
+                {
+                    var candidate = NativeTextContent.EncodePlain(value); ushort w = 0, h = 0;
+                    fixed (byte* pointer = candidate) ((AtkTextNode*)textAddress)->GetTextDrawSize(&w, &h, pointer);
+                    return w;
+                });
+                if (!NativeTextContent.TryReplace(original, wrapped, out bytes)) { text->FontSize = font; return false; }
+                ushort measuredWidth = 0, measuredHeight = 0;
+                fixed (byte* pointer = bytes) text->GetTextDrawSize(&measuredWidth, &measuredHeight, pointer);
+                required = Math.Max(measuredHeight + 2, size + 2);
+                if (growWindow || required + 4 <= space || size <= minimumFont) break;
+            }
+        }
+        finally { text->TextFlags = flags; }
+        if (required > 1200) { text->FontSize = font; return false; }
+        var extra = growWindow ? TextBoxLayout.ExtraHeight(required + 4, space) : 0;
+        if (extra > 600) return false;
         if (extra > 0)
         {
             // The game's resize routine keeps the unit's collision bounds in step with the root.
@@ -280,10 +304,17 @@ internal sealed unsafe class NativeTextLayout
             if (device != null && device->Height > 0 && bottom > device->Height - 8)
                 addon->SetPosition(addon->X, (short)Math.Max(0, addon->Y - (bottom - (device->Height - 8))));
         }
-        text->SetWidth((ushort)width); text->SetHeight((ushort)required);
-        text->TextFlags = (baseline.Text.Flags ?? flags | TextFlags.MultiLine) | TextFlags.MultiLine;
-        text->TextFlags &= ~(TextFlags.WordWrap | TextFlags.Ellipsis | TextFlags.AutoAdjustNodeSize);
+        text->SetWidth((ushort)width);
+        // Without window growth the node keeps the game's height, so nothing below it is overlapped.
+        text->SetHeight(growWindow ? (ushort)required : baseline.Text.Height);
+        text->TextFlags = (flags | TextFlags.MultiLine) & ~(TextFlags.WordWrap | TextFlags.Ellipsis | TextFlags.AutoAdjustNodeSize);
         text->IsDirty = true;
+        result = new(bytes, Rendered(bytes), Changes(touched, root));
+        return true;
+    }
+
+    private static Change[] Changes(List<State> touched, AtkResNode* root)
+    {
         var changes = new List<Change>();
         foreach (var state in touched)
         {
@@ -292,8 +323,7 @@ internal sealed unsafe class NativeTextLayout
             var originalState = state.Address == (nint)root ? state with { X = after.X, Y = after.Y } : state;
             if (originalState != after) changes.Add(new(originalState, after, state.Address == (nint)root));
         }
-        result = new(bytes, Rendered(bytes), changes.ToArray());
-        return true;
+        return changes.ToArray();
     }
 
     private static readonly Dictionary<(nint Addon, nint Text, string Source), TooltipBaseline> tooltipBaselines = new();

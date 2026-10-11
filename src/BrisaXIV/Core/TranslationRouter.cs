@@ -7,10 +7,12 @@ public sealed record FallbackQueues(TranslationQueue Japanese, TranslationQueue 
 public sealed class TranslationRouter(TranslationQueue queue, TranslationFile file, SourceTextIndex index, bool japaneseSource, TranslationQueue? clientQueue = null, bool cachedOnly = false, bool prioritizeDialogue = false,
     FallbackQueues? fallback = null, ISourceTextResolver? live = null)
 {
-    // Game content (quest journal, tooltips, dialogue, notices): text there often embeds item, place or
-    // character names through macros, so no static original matches it. Such client-language text may
-    // fall back to Google; HUD lists and other windows (party list, counters) never send it on their own.
-    private static readonly HashSet<string> ContentScopes = new(StringComparer.Ordinal) { "Missões", "Itens e ações", "Falas", "Avisos" };
+    // Game content (quest journal and objectives, dialogue, notices): text there often embeds item,
+    // place or character names through macros, so no static original matches it. Such client-language
+    // text may fall back to Google. Tooltips are excluded: their unmatched lines are counters, prices and
+    // other plugins' rows, which would flood the public endpoint (descriptions resolve live instead).
+    // HUD lists and other windows (party list, counters) never send it on their own either.
+    private static readonly HashSet<string> ContentScopes = new(StringComparer.Ordinal) { "Missões", "Falas", "Avisos" };
     public bool CanRequest(string scope, bool priority = false) => !cachedOnly || fallback != null || (prioritizeDialogue && (scope == "Falas" || priority));
     public TranslationView Get(string displayed, bool request = true, string scope = "", bool priority = false)
     {

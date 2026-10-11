@@ -11,7 +11,7 @@ public sealed partial class Translator : IDisposable
     private readonly HttpClient client;
     private readonly TranslatorOptions options;
     private long googleUntil;
-    private long nextGoogleRequest;
+    private readonly GoogleCadence googleCadence;
     public bool UsingGoogleFallback => options.Provider == TranslationProvider.DeepL && Interlocked.Read(ref googleUntil) > DateTimeOffset.UtcNow.ToUnixTimeSeconds();
     public string SourceLanguage => options.SourceLanguage;
     public int RequestsPerMinute => options.OpenAIRequestsPerMinute;
@@ -20,10 +20,11 @@ public sealed partial class Translator : IDisposable
     public void RetryPreferredProvider() => Interlocked.Exchange(ref googleUntil, 0);
     private static readonly JsonSerializerOptions JsonOptions = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
-    public Translator(TranslatorOptions options, HttpMessageHandler? handler = null, OpenAIRateLimiter? openAIRateLimiter = null, Action<string>? openAIDiagnostic = null, Action<AIUsageRecord>? aiUsage = null)
+    public Translator(TranslatorOptions options, HttpMessageHandler? handler = null, OpenAIRateLimiter? openAIRateLimiter = null, Action<string>? openAIDiagnostic = null, Action<AIUsageRecord>? aiUsage = null, GoogleCadence? googleCadence = null)
     {
         this.options = options;
         this.aiUsage = aiUsage;
+        this.googleCadence = googleCadence ?? new GoogleCadence();
         this.openAIRateLimiter = openAIRateLimiter ?? new OpenAIRateLimiter();
         this.openAIDiagnostic = openAIDiagnostic;
         client = new HttpClient(handler ?? new HttpClientHandler { AllowAutoRedirect = false })
@@ -166,7 +167,7 @@ public sealed partial class Translator : IDisposable
         var results = new List<string>();
         foreach (var text in texts)
         {
-            var wait = nextGoogleRequest - Environment.TickCount64;
+            var wait = googleCadence.Wait;
             Report(progress, TranslationStage.WaitingLimit, texts, "Google", results.Count);
             if (wait > 0) await Task.Delay(TimeSpan.FromMilliseconds(wait), token).ConfigureAwait(false);
             if (shouldYield?.Invoke() == true) throw new TranslationYieldException();
@@ -179,9 +180,16 @@ public sealed partial class Translator : IDisposable
             Report(progress, TranslationStage.AwaitingResponse, texts, "Google", results.Count, sent: true);
             using var response = await client.SendAsync(request, token).ConfigureAwait(false);
             Report(progress, TranslationStage.Validating, texts, "Google", results.Count);
-            nextGoogleRequest = Environment.TickCount64 + 1200;
+            googleCadence.Sent();
+            if ((int)response.StatusCode is 302 or 403 or 429)
+            {
+                // A redirect to Google's "unusual traffic" page is a temporary block for this
+                // connection: every queue waits instead of repeating the request.
+                googleCadence.Blocked();
+                throw new TranslationException($"Google Tradutor bloqueou temporariamente por excesso de pedidos (HTTP {(int)response.StatusCode}). Nova tentativa em 5 minutos.", retryAfter: GoogleCadence.BlockPause);
+            }
             if (!response.IsSuccessStatusCode)
-                throw new TranslationException($"Google Tradutor indisponível (HTTP {(int)response.StatusCode}). Nova tentativa agendada.", retryAfter: (int)response.StatusCode is 403 or 429 ? TimeSpan.FromMinutes(5) : null);
+                throw new TranslationException($"Google Tradutor indisponível (HTTP {(int)response.StatusCode}). Nova tentativa agendada.");
             using var json = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(token).ConfigureAwait(false), cancellationToken: token).ConfigureAwait(false);
             var translated = TextRules.NormalizeQuotes(string.Concat(json.RootElement[0].EnumerateArray()
                 .Where(segment => segment.ValueKind == JsonValueKind.Array && segment.GetArrayLength() > 0 && segment[0].ValueKind == JsonValueKind.String)
