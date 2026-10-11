@@ -260,9 +260,11 @@ internal sealed unsafe class NativeTextLayout
         if (!tooltipBaselines.TryGetValue(key, out var baseline) || !baseline.Matches(nodes))
         {
             if (tooltipBaselines.Count > 128) tooltipBaselines.Clear();
-            tooltipBaselines[key] = baseline = TooltipBaseline.Capture(root, text, nodes);
+            tooltipBaselines[key] = baseline = TooltipBaseline.Capture(root, text, original, nodes);
         }
-        var extra = TextBoxLayout.ExtraHeight(required, baseline.Text.Height);
+        // The game sizes the window from the English content, which can be shorter than its node.
+        // A few pixels of slack keep the last line inside the frame.
+        var extra = TextBoxLayout.ExtraHeight(required + 4, Math.Min(baseline.Text.Height, baseline.ContentHeight + 2));
         if (extra > 600) return false;
         var touched = new List<State> { baseline.Text };
         if (extra > 0)
@@ -298,12 +300,12 @@ internal sealed unsafe class NativeTextLayout
 
     // The game's layout of one tooltip text: its node, the root, the frames around it and the
     // top-level rows below it, all classified in coordinates local to the root.
-    private sealed record TooltipBaseline(State Text, State Root, State[] Containers, State[] Below)
+    private sealed record TooltipBaseline(State Text, State Root, State[] Containers, State[] Below, int ContentHeight)
     {
         public bool Matches(HashSet<nint> nodes) => Containers.Concat(Below).Append(Text).Append(Root)
             .All(state => nodes.Contains(state.Address) && ((AtkResNode*)state.Address)->NodeId == state.Id);
 
-        public static TooltipBaseline Capture(AtkResNode* root, AtkTextNode* text, HashSet<nint> nodes)
+        public static TooltipBaseline Capture(AtkResNode* root, AtkTextNode* text, ReadOnlySeStringSpan original, HashSet<nint> nodes)
         {
             var textNode = (AtkResNode*)text;
             var textTop = LocalY(textNode, root);
@@ -319,7 +321,12 @@ internal sealed unsafe class NativeTextLayout
                 if (top <= textTop + 1 && top + node->Height >= textBottom - 1) containers.Add(Snapshot(node));
                 else if (top >= textBottom - 1 && (node->ParentNode == root || LocalY(node->ParentNode, root) < textBottom - 1)) below.Add(Snapshot(node));
             }
-            return new(Snapshot(textNode), Snapshot(root), containers.ToArray(), below.ToArray());
+            // Height of the English text as the game lays it out, with the node's own wrapping flags.
+            var bytes = new byte[original.Data.Length + 1];
+            original.Data.CopyTo(bytes);
+            ushort contentWidth = 0, contentHeight = 0;
+            fixed (byte* pointer = bytes) text->GetTextDrawSize(&contentWidth, &contentHeight, pointer);
+            return new(Snapshot(textNode), Snapshot(root), containers.ToArray(), below.ToArray(), contentHeight > 0 ? contentHeight : text->Height);
         }
     }
 
