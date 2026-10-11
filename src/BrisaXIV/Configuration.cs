@@ -35,6 +35,7 @@ public sealed class Configuration : IPluginConfiguration
     public bool TranslateUnmatched = true;
     public bool GoogleFallback = true;
     public bool GoogleForMissing = true;
+    public bool Prefetch = true;
     public bool BackgroundPreparation = true;
     public bool CachedOnly = true;
     public bool PrioritizeDialogue = true;

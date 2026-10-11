@@ -41,6 +41,11 @@ public sealed partial class Plugin : IDalamudPlugin
 #endif
     private readonly TranslationJournal journal;
     private readonly HoveredTextSources hovered;
+    private readonly PrefetchedSources prefetched = new();
+    private readonly ISourceTextResolver liveSources;
+#if !BRISA_READ_ONLY
+    private readonly TranslationPrefetch prefetch;
+#endif
     private readonly NamePlateTranslation namePlates;
     private readonly TalkRefreshTranslation talkRefresh;
     private readonly JapaneseSourceIndex originals;
@@ -133,8 +138,13 @@ public sealed partial class Plugin : IDalamudPlugin
 #endif
         originals = new JapaneseSourceIndex(DataManager.GameData.DataPath.FullName, (Lumina.Data.Language)((int)ClientState.ClientLanguage + 1), root);
         preparation = new BackgroundPreparation(originals.Catalog, file, Path.Combine(root, "progresso-preparacao.json"));
-        hovered = new HoveredTextSources(GameGui, DataManager, Evaluator, ClientState.ClientLanguage);
+        var gameTexts = new GameTextEvaluator(DataManager, Evaluator, ClientState.ClientLanguage);
+        hovered = new HoveredTextSources(GameGui, gameTexts);
+        liveSources = new CompositeSourceResolver(hovered, prefetched);
         router = MakeRouter();
+#if !BRISA_READ_ONLY
+        prefetch = new TranslationPrefetch(DataManager, gameTexts, prefetched, () => router, file, PrefetchHasRoom, config);
+#endif
         namePlates = new NamePlateTranslation(NamePlateGui, () => router, () => config.Enabled && config.NamePlates);
         capture.Injected = new InjectedTextMap();
         talkRefresh = new TalkRefreshTranslation(() => router, config, capture.Injected);
@@ -235,7 +245,13 @@ public sealed partial class Plugin : IDalamudPlugin
 #else
         config.GoogleForMissing ? fallback : null,
 #endif
-        hovered);
+        liveSources);
+#if !BRISA_READ_ONLY
+    // Prefetch requests wait while the queue that would receive them is busy, so text on screen
+    // always goes first and the public Google endpoint is never flooded.
+    private bool PrefetchHasRoom() => queue.PendingCount < 32
+        && (fallback.Count == 0 || fallback[0].Japanese.PendingCount + fallback[0].Client.PendingCount < 12);
+#endif
     private void RetryErrors(bool resumePreparation = false)
     {
         shownBillingFailure = null; queue.RetryErrors(); clientQueue.RetryErrors();
@@ -296,6 +312,9 @@ public sealed partial class Plugin : IDalamudPlugin
         try
         {
             hovered.Refresh();
+#if !BRISA_READ_ONLY
+            prefetch.Tick();
+#endif
             namePlates.Pump();
             // Player-named companions (chocobo, race chocobo) are never treated as NPC names.
             capture.SetNpcNames(Objects.Where(x => x.ObjectKind is Dalamud.Game.ClientState.Objects.Enums.ObjectKind.EventNpc
