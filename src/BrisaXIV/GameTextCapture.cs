@@ -17,6 +17,26 @@ internal sealed unsafe class GameTextCapture
     private HashSet<string> npcNames = new(StringComparer.Ordinal);
     public void SetNpcNames(IEnumerable<string> names) => npcNames = names.Where(x => x.Length > 0).ToHashSet(StringComparer.Ordinal);
     public HudDiagnostics? Diagnostics { get; set; }
+    public InjectedTextMap? Injected { get; set; }
+
+    private void KeepInjected(AtkUnitBase* addon, AtkUldManager* manager, AtkTextNode* textNode, nint address, ushort addonId, string addonName,
+        string current, string source, ReadOnlySpan<byte> bytes, bool show, List<(float Y, float X, string Text)> lines)
+    {
+        var node = (AtkResNode*)textNode;
+        if (show) lines.Add((node->ScreenY, node->ScreenX, source));
+        if (applied.TryGetValue(address, out var saved))
+        {
+            if (show && saved.Rendered == current && NativeTextLayout.IsCurrent(manager, saved.Layout)) return;
+            NativeTextLayout.Restore(addon, manager, saved.Layout);
+            applied.Remove(address);
+        }
+        // The speaker name keeps the game's layout; the line adapts its font and box to fit.
+        if (!show || DialoguePresentation.IsSpeakerName(addonName, node->NodeId)
+            || !NativeTextLayout.TryFitInjectedDialogue(manager, textNode, addonName, out var changes)) return;
+        var injectedBytes = new byte[bytes.Length + 1];
+        bytes.CopyTo(injectedBytes);
+        applied[address] = new(addonId, node->NodeId, injectedBytes, source, current, current, changes, false);
+    }
     private readonly Dictionary<nint, AppliedText> applied = new();
     private readonly HashSet<nint> live = new();
     private readonly Dictionary<nint, double> since = new();
@@ -131,16 +151,24 @@ internal sealed unsafe class GameTextCapture
                 if (bytes.Length == 0 || bytes.Length > 24000) continue;
                 var seString = new ReadOnlySeStringSpan(bytes);
                 var current = NativeTextContent.Extract(seString);
+                // Talk text the game laid out from translated refresh values: never translated again,
+                // only fitted to its box, and shown with its original in the reading panel.
+                if (addonName == "Talk" && Injected?.TryGetOriginal(current, out var injectedSource) == true)
+                {
+                    KeepInjected(addon, manager, textNode, address, addonId, addonName, current, injectedSource, bytes, active && native && Visible(node), lines);
+                    continue;
+                }
                 var source = current;
                 var originalSource = applied.TryGetValue(address, out var prior) ? prior.Original : source;
                 var characterName = DialoguePresentation.IsSpeakerName(addonName, node->NodeId) || npcNames.Contains(originalSource);
-                var heading = TextCategoryPolicy.IsWindowHeading(windowComponent, node->NodeId)
-                    || addonName == "ItemDetail" && ((AddonItemDetail*)addon)->ItemNameText == textNode
+                var frameHeading = TextCategoryPolicy.IsWindowHeading(windowComponent, node->NodeId);
+                var contentHeading = addonName == "ItemDetail" && ((AddonItemDetail*)addon)->ItemNameText == textNode
                     || addonName == "JournalDetail" && ((AddonJournalDetail*)addon)->DutyNameTextNode == textNode
                     || addonName == "JournalAccept" && ((AddonJournalAccept*)addon)->QuestTitleText == textNode;
+                var heading = frameHeading || contentHeading;
                 var partCategory = TextCategoryPolicy.PartCategory(addonName, category);
                 var nodeEnabled = characterName ? config.CharacterNames
-                    : TextCategoryPolicy.IsNodeEnabled(config.TextPartEnabled(partCategory, heading), true, heading, false);
+                    : TextCategoryPolicy.IsNodeEnabled(config.TextPartEnabled(partCategory, heading, windowFrame: frameHeading), true, heading, false);
                 var restoreNode = restore || !nodeEnabled;
                 if (applied.TryGetValue(address, out var saved))
                 {

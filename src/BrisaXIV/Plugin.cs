@@ -42,6 +42,7 @@ public sealed partial class Plugin : IDalamudPlugin
     private readonly TranslationJournal journal;
     private readonly HoveredTextSources hovered;
     private readonly NamePlateTranslation namePlates;
+    private readonly TalkRefreshTranslation talkRefresh;
     private readonly JapaneseSourceIndex originals;
     private readonly BackgroundPreparation preparation;
     private IReadOnlyList<CapturedWindow> windows = [];
@@ -135,6 +136,8 @@ public sealed partial class Plugin : IDalamudPlugin
         hovered = new HoveredTextSources(GameGui, DataManager, Evaluator, ClientState.ClientLanguage);
         router = MakeRouter();
         namePlates = new NamePlateTranslation(NamePlateGui, () => router, () => config.Enabled && config.NamePlates);
+        capture.Injected = new InjectedTextMap();
+        talkRefresh = new TalkRefreshTranslation(() => router, config, capture.Injected);
         quests = new QuestCatalog(DataManager);
         Commands.AddHandler("/brisa", new CommandInfo(OnCommand) { HelpMessage = "Progresso: /brisa progresso. Custos da IA: /brisa custos. Configuração: /brisa. Leitura: /brisa ler. Todas as telas: /brisa tudo. Recarregar TXT: /brisa recarregar. Diagnóstico do diário, habilidades e itens: /brisa diagnostico." });
         PluginInterface.UiBuilder.DisableCutsceneUiHide = true;
@@ -144,6 +147,14 @@ public sealed partial class Plugin : IDalamudPlugin
         Framework.Update += Update;
         Lifecycle.RegisterListener(AddonEvent.PreDraw, BeforeDraw);
         Lifecycle.RegisterListener(AddonEvent.PreRequestedUpdate, ["ActionDetail", "ItemDetail"], BeforeTooltipUpdate);
+        Lifecycle.RegisterListener(AddonEvent.PreRefresh, "Talk", BeforeTalkRefresh);
+    }
+
+    private void BeforeTalkRefresh(AddonEvent type, AddonArgs args)
+    {
+        if (captureStopped || !ClientState.IsLoggedIn) return;
+        try { talkRefresh.PreRefresh(type, args); }
+        catch (Exception ex) { Log.Warning("BrisaXIV: tradução da fala no refresh ignorada ({ErrorType}).", ex.GetType().Name); }
     }
 
     private void BeforeTooltipUpdate(AddonEvent type, AddonArgs args)
@@ -504,6 +515,7 @@ public sealed partial class Plugin : IDalamudPlugin
         Framework.Update -= Update;
         Lifecycle.UnregisterListener(AddonEvent.PreDraw, BeforeDraw);
         Lifecycle.UnregisterListener(AddonEvent.PreRequestedUpdate, ["ActionDetail", "ItemDetail"], BeforeTooltipUpdate);
+        Lifecycle.UnregisterListener(AddonEvent.PreRefresh, "Talk", BeforeTalkRefresh);
         PluginInterface.UiBuilder.Draw -= Draw;
         PluginInterface.UiBuilder.OpenConfigUi -= OpenSettings;
         PluginInterface.UiBuilder.OpenMainUi -= OpenReading;

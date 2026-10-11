@@ -146,6 +146,23 @@ internal static class FallbackRoutingTests
             check(error.Contains("bloqueou") && cadence.Wait > 60_000, "A Google redirect is treated as a temporary block that pauses every queue sharing the cadence");
         }
 
+        // Talk lines written into the game's refresh values map back to their source, within a bounded memory.
+        var injectedMap = new InjectedTextMap(capacity: 2);
+        injectedMap.Add("Olá,\naventureiro!", "Hello, adventurer!");
+        check(injectedMap.TryGetOriginal("Olá, aventureiro!", out var injectedOriginal) && injectedOriginal == "Hello, adventurer!"
+            && !injectedMap.TryGetOriginal("Olá, viajante!", out _),
+            "An injected dialogue line maps back to its source even after the game re-wraps it, and other lines do not");
+        injectedMap.Add("Segunda", "Second"); injectedMap.Add("Terceira", "Third");
+        check(!injectedMap.TryGetOriginal("Olá, aventureiro!", out _) && injectedMap.TryGetOriginal("Terceira", out _),
+            "The injected line memory forgets the oldest entries beyond its capacity");
+
+        // A Japanese line that pulls an item name from another sheet would lose it ("「」"): it is left out.
+        var nameMacro = new byte[] { 2, (byte)Lumina.Text.Payloads.MacroCode.JaNoun, 2, 1, 3 }; // length 1 is encoded as 2
+        var withItem = System.Text.Encoding.UTF8.GetBytes("「").Concat(nameMacro).Concat(System.Text.Encoding.UTF8.GetBytes("」を届けて")).ToArray();
+        check(BrisaXIV.JapaneseSourceIndex.InsertsNames(new Lumina.Text.ReadOnly.ReadOnlySeString(withItem))
+            && !BrisaXIV.JapaneseSourceIndex.InsertsNames(new Lumina.Text.ReadOnly.ReadOnlySeString(System.Text.Encoding.UTF8.GetBytes("鉄の斧を届けて"))),
+            "Japanese originals with an inserted item name are recognized as incomplete");
+
         // A plugin update brings new published entries without replacing the player's corrections.
         var personalPath = Path.Combine(scratch, "personal.txt");
         var personal = new TranslationFile(personalPath); personal.Store("既存", "Correção pessoal");

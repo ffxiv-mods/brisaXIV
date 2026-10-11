@@ -53,7 +53,7 @@ internal sealed class JapaneseSourceIndex : IDisposable
             var versionFile = Path.Combine(Directory.GetParent(GamePath)!.FullName, "ffxivgame.ver");
             var version = File.Exists(versionFile) ? File.ReadAllText(versionFile).Trim() : "unknown";
             var fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(GamePath + version)));
-            var header = $"# BrisaXIV sources v4 {language} {fingerprint}";
+            var header = $"# BrisaXIV sources v5 {language} {fingerprint}";
             if (TryLoad(header) && Catalog.TryLoad(CatalogPath, fingerprint, stop.Token)) { Texts.Ready = true; return; }
             using var game = new GameData(GamePath, new LuminaOptions { DefaultExcelLanguage = language, LoadMultithreaded = false });
             LoadExpansions(game);
@@ -99,7 +99,9 @@ internal sealed class JapaneseSourceIndex : IDisposable
                 stop.Token.ThrowIfCancellationRequested();
                 foreach (var column in columns)
                 {
-                    var ja = row.ReadStringColumn(column).ExtractText();
+                    var original = row.ReadStringColumn(column);
+                    if (InsertsNames(original)) continue;
+                    var ja = original.ExtractText();
                     Catalog.Add(ja, expansion, name);
                     if (source != null && source.TryGetSubrow(row.RowId, row.SubrowId, out var display)
                         && column < sourceRaw!.Columns.Count && sourceRaw.Columns[column].Type == ExcelColumnDataType.String)
@@ -118,7 +120,9 @@ internal sealed class JapaneseSourceIndex : IDisposable
                 var rowExpansion = name == "Quest" && questExpansions.TryGetValue(row.RowId, out var version) ? version : expansion;
                 foreach (var column in columns)
                 {
-                    var ja = row.ReadStringColumn(column).ExtractText();
+                    var original = row.ReadStringColumn(column);
+                    if (InsertsNames(original)) continue;
+                    var ja = original.ExtractText();
                     Catalog.Add(ja, rowExpansion, name);
                     if (source != null && source.TryGetRow(row.RowId, out var display)
                         && column < sourceRaw!.Columns.Count && sourceRaw.Columns[column].Type == ExcelColumnDataType.String)
@@ -134,6 +138,20 @@ internal sealed class JapaneseSourceIndex : IDisposable
 
     // The first string column of these sheets is the singular name shown in the HUD.
     private static bool IsNameSheet(string sheet) => sheet is "BNpcName" or "ENpcResident" or "EObjName";
+
+    // A Japanese line that pulls an item, NPC or place name from another sheet loses it in ExtractText
+    // ("「」"), while the English line often spells the name out. Such originals are left out of the
+    // index and the catalog: the on-screen English (with the name) is translated instead.
+    public static bool InsertsNames(Lumina.Text.ReadOnly.ReadOnlySeString text)
+    {
+        foreach (var payload in text)
+            if (payload.Type == Lumina.Text.ReadOnly.ReadOnlySePayloadType.Macro && payload.MacroCode is Lumina.Text.Payloads.MacroCode.Sheet
+                    or Lumina.Text.Payloads.MacroCode.SheetSub or Lumina.Text.Payloads.MacroCode.Fixed or Lumina.Text.Payloads.MacroCode.JaNoun
+                    or Lumina.Text.Payloads.MacroCode.EnNoun or Lumina.Text.Payloads.MacroCode.DeNoun or Lumina.Text.Payloads.MacroCode.FrNoun
+                    or Lumina.Text.Payloads.MacroCode.ChNoun)
+                return true;
+        return false;
+    }
 
     private void LoadExpansions(GameData game)
     {
