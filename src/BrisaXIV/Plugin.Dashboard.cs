@@ -186,7 +186,7 @@ public sealed partial class Plugin
         sourceChanged |= ToggleRow("Usar idioma atual se não houver original japonês", ref config.TranslateUnmatched);
 #if !BRISA_READ_ONLY
         sourceChanged |= ToggleRow("Priorizar falas e escolhas do NPC", ref config.PrioritizeDialogue);
-        sourceChanged |= ToggleRow("Traduzir o que faltar ou falhar: OpenAI, DeepL e Google, nessa ordem, conforme as chaves", ref config.GoogleForMissing);
+        sourceChanged |= ToggleRow("Traduzir o que faltar ou falhar: Google, OpenAI e DeepL, nessa ordem, conforme as chaves", ref config.GoogleForMissing);
 #endif
         if (sourceChanged) { router = MakeRouter(); changed = true; }
         if (changed) PluginInterface.SavePluginConfig(config);

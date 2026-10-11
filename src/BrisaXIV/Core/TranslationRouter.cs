@@ -5,7 +5,7 @@ public sealed record FallbackQueues(TranslationQueue Japanese, TranslationQueue 
 
 // The fallback chain receives what the main path cannot deliver: text blocked by TXT-only mode after
 // resolving to a game original, or text whose request failed. Providers are tried in the chain's
-// order (OpenAI, DeepL, then Google, by configured keys); a failure moves on to the next one.
+// order (Google, then OpenAI and DeepL by configured keys); a failure moves on to the next one.
 public sealed class TranslationRouter(TranslationQueue queue, TranslationFile file, SourceTextIndex index, bool japaneseSource, TranslationQueue? clientQueue = null, bool cachedOnly = false, bool prioritizeDialogue = false,
     IReadOnlyList<FallbackQueues>? fallback = null, ISourceTextResolver? live = null)
 {
