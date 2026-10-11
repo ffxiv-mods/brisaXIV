@@ -4,7 +4,8 @@ namespace BrisaXIV.Core;
 // the plugin so all queues follow a single cadence and a temporary block pauses all of them.
 public sealed class GoogleCadence
 {
-    private static readonly TimeSpan Interval = TimeSpan.FromMilliseconds(1200);
+    // Unmatched counters and prices are no longer sent, so a short cadence keeps dialogue fast.
+    private static readonly TimeSpan Interval = TimeSpan.FromMilliseconds(400);
     public static readonly TimeSpan BlockPause = TimeSpan.FromMinutes(5);
     private long next;
 

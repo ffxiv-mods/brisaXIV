@@ -14,7 +14,7 @@ internal sealed class HudDiagnostics(string path)
     public string Path { get; } = path;
     public bool Enabled { get; private set; }
 
-    public bool Watches(string addon) => Enabled && !full && (addon.StartsWith("Journal", StringComparison.Ordinal) || addon is "ActionDetail" or "ItemDetail");
+    public bool Watches(string addon) => Enabled && !full && (addon.StartsWith("Journal", StringComparison.Ordinal) || addon is "ActionDetail" or "ItemDetail" or "Talk");
 
     public void Toggle()
     {

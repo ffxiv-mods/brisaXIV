@@ -61,72 +61,124 @@ internal sealed unsafe class NativeTextLayout
 
         var before = Snapshot((AtkResNode*)text);
         var background = dialogue ? Background(manager, text, addonName) : null;
-        var width = (int)text->Width;
-        if (background != null)
-        {
-            var leftInset = text->X - background->X;
-            width = Math.Min(width, (int)(background->X + background->Width - text->X - Math.Clamp(leftInset, 8, 36)));
-        }
+        var width = DialogueWidth(text, background);
         if (width < 60) { result = new(plain, Rendered(plain), []); return true; }
+        var available = background != null ? (int)(background->Y + background->Height - text->Y - 16) : (int)text->Height;
         var flags = text->TextFlags;
-        string wrapped;
-        ushort measuredWidth = 0, measuredHeight = 0;
+        var font = text->FontSize;
+        // A long line first gets a slightly smaller font (down to 85%); only if it still does not fit
+        // does the box grow, so the text never spills out of the balloon.
+        var minimumFont = dialogue ? MinimumDialogueFont(font) : font;
+        int required;
         try
         {
             // Measure explicit lines; automatic wrapping would hide an overlong candidate's width.
             text->TextFlags = (flags | TextFlags.MultiLine) & ~(TextFlags.WordWrap | TextFlags.Ellipsis | TextFlags.AutoAdjustNodeSize);
             var textAddress = (nint)text;
-            wrapped = TextBoxLayout.Wrap(translation, width - 2, value =>
+            for (var size = font; ; size--)
             {
-                var bytes = NativeTextContent.EncodePlain(value);
-                ushort w = 0, h = 0;
-                fixed (byte* pointer = bytes) ((AtkTextNode*)textAddress)->GetTextDrawSize(&w, &h, pointer);
-                return w;
-            });
-            if (!NativeTextContent.TryReplace(original, wrapped, out plain)) return false;
-            fixed (byte* pointer = plain) text->GetTextDrawSize(&measuredWidth, &measuredHeight, pointer);
-        }
-        finally { text->TextFlags = flags; }
-        var required = Math.Max((int)measuredHeight + 2, text->FontSize + 2);
-        var available = (int)text->Height;
-        if (background != null)
-            available = (int)(background->Y + background->Height - text->Y - 16);
-        var extra = TextBoxLayout.ExtraHeight(required, available);
-        // Unknown containers retain their layout and use the reading panel instead of spilling.
-        if (required > 1200 || (extra > 0 && (background == null || extra > 500))) return false;
-        var changes = new List<Change>();
-        if (extra > 0 && background != null)
-        {
-            var originalBackground = Snapshot(background);
-            background->SetHeight((ushort)(background->Height + extra));
-            background->SetYFloat(background->Y - extra); // Grow upwards, keeping the tail and bottom in place.
-            changes.Add(new(originalBackground, Snapshot(background)));
-            if (background->Type == NodeType.Res)
-                for (var i = 0; i < manager->NodeListCount; i++)
+                text->FontSize = size;
+                var wrapped = TextBoxLayout.Wrap(translation, width - 2, value =>
                 {
-                    var layer = manager->NodeList[i];
-                    if (layer == null || layer->ParentNode != background || layer->Type != NodeType.Image
-                        || layer->Height != originalBackground.Height) continue;
-                    var image = Snapshot(layer); layer->SetHeight((ushort)(layer->Height + extra));
-                    changes.Add(new(image, Snapshot(layer)));
-                }
-            var oldTextY = text->Y;
-            text->SetYFloat(text->Y - extra);
-            // Keep the speaker heading attached to the upper edge of the Talk box.
-            for (var i = 0; i < manager->NodeListCount; i++)
-            {
-                var node = manager->NodeList[i];
-                if (node == null || node == (AtkResNode*)text || node->Type != NodeType.Text || node->ParentNode != text->ParentNode
-                    || node->Y >= oldTextY || node->Y < originalBackground.Y - 40) continue;
-                var heading = Snapshot(node); node->SetYFloat(node->Y - extra);
-                changes.Add(new(heading, Snapshot(node)));
+                    var bytes = NativeTextContent.EncodePlain(value);
+                    ushort w = 0, h = 0;
+                    fixed (byte* pointer = bytes) ((AtkTextNode*)textAddress)->GetTextDrawSize(&w, &h, pointer);
+                    return w;
+                });
+                if (!NativeTextContent.TryReplace(original, wrapped, out plain)) { text->FontSize = font; return false; }
+                ushort measuredWidth = 0, measuredHeight = 0;
+                fixed (byte* pointer = plain) text->GetTextDrawSize(&measuredWidth, &measuredHeight, pointer);
+                required = Math.Max(measuredHeight + 2, size + 2);
+                if (required <= available || size <= minimumFont) break;
             }
         }
+        finally { text->TextFlags = flags; }
+        var extra = TextBoxLayout.ExtraHeight(required, available);
+        // Unknown containers retain their layout and use the reading panel instead of spilling.
+        if (required > 1200 || (extra > 0 && background == null)) { text->FontSize = font; return false; }
+        var changes = new List<Change>();
+        if (extra > 0) GrowDialogueBox(manager, text, background!, extra, changes);
         text->SetWidth((ushort)width); text->SetHeight((ushort)required);
         text->TextFlags = (flags | TextFlags.MultiLine) & ~(TextFlags.WordWrap | TextFlags.Ellipsis | TextFlags.AutoAdjustNodeSize);
         text->IsDirty = true;
         changes.Add(new(before, Snapshot((AtkResNode*)text)));
         result = new(plain, NativeTextContent.Extract(new ReadOnlySeStringSpan(plain.AsSpan(0, plain.Length - 1))), changes.ToArray());
+        return true;
+    }
+
+    private static int MinimumDialogueFont(byte font) => Math.Max(10, (int)Math.Ceiling(font * 0.85));
+
+    private static int DialogueWidth(AtkTextNode* text, AtkResNode* background)
+    {
+        var width = (int)text->Width;
+        if (background == null) return width;
+        var leftInset = text->X - background->X;
+        return Math.Min(width, (int)(background->X + background->Width - text->X - Math.Clamp(leftInset, 8, 36)));
+    }
+
+    // Grows a dialogue balloon upwards, keeping its tail and bottom in place.
+    private static void GrowDialogueBox(AtkUldManager* manager, AtkTextNode* text, AtkResNode* background, int extra, List<Change> changes)
+    {
+        var originalBackground = Snapshot(background);
+        background->SetHeight((ushort)(background->Height + extra));
+        background->SetYFloat(background->Y - extra);
+        changes.Add(new(originalBackground, Snapshot(background)));
+        if (background->Type == NodeType.Res)
+            for (var i = 0; i < manager->NodeListCount; i++)
+            {
+                var layer = manager->NodeList[i];
+                if (layer == null || layer->ParentNode != background || layer->Type != NodeType.Image
+                    || layer->Height != originalBackground.Height) continue;
+                var image = Snapshot(layer); layer->SetHeight((ushort)(layer->Height + extra));
+                changes.Add(new(image, Snapshot(layer)));
+            }
+        var textBefore = Snapshot((AtkResNode*)text);
+        text->SetYFloat(text->Y - extra);
+        // Keep the speaker heading attached to the upper edge of the Talk box.
+        for (var i = 0; i < manager->NodeListCount; i++)
+        {
+            var node = manager->NodeList[i];
+            if (node == null || node == (AtkResNode*)text || node->Type != NodeType.Text || node->ParentNode != text->ParentNode
+                || node->Y >= textBefore.Y || node->Y < originalBackground.Y - 40) continue;
+            var heading = Snapshot(node); node->SetYFloat(node->Y - extra);
+            changes.Add(new(heading, Snapshot(node)));
+        }
+    }
+
+    // Talk text that the game itself laid out from translated refresh values (see TalkRefreshTranslation):
+    // its bytes are kept as they are; only the font (down to 85%) and then the box size adapt to fit.
+    public static bool TryFitInjectedDialogue(AtkUldManager* manager, AtkTextNode* text, string addonName, out Change[] changes)
+    {
+        changes = [];
+        var background = Background(manager, text, addonName);
+        if (background == null) return false;
+        var width = DialogueWidth(text, background);
+        if (width < 60) return false;
+        var available = (int)(background->Y + background->Height - text->Y - 16);
+        var before = Snapshot((AtkResNode*)text);
+        var font = text->FontSize;
+        var flags = text->TextFlags;
+        var required = 0;
+        for (var size = font; ; size--)
+        {
+            // Native wrapping measures the node at this width and font, like the game does for Talk.
+            text->FontSize = size;
+            text->TextFlags = (flags | TextFlags.MultiLine | TextFlags.WordWrap | TextFlags.AutoAdjustNodeSize) & ~TextFlags.Ellipsis;
+            text->SetWidth((ushort)width);
+            text->ResizeNodeForCurrentText();
+            required = Math.Max(text->Height + 2, size + 2);
+            if (required <= available || size <= MinimumDialogueFont(font)) break;
+        }
+        text->TextFlags = (flags | TextFlags.MultiLine | TextFlags.WordWrap) & ~(TextFlags.Ellipsis | TextFlags.AutoAdjustNodeSize);
+        text->SetWidth((ushort)width);
+        text->SetHeight((ushort)Math.Min(1200, required));
+        var list = new List<Change>();
+        var extra = TextBoxLayout.ExtraHeight(required, available);
+        if (extra > 0 && required <= 1200) GrowDialogueBox(manager, text, background, extra, list);
+        text->IsDirty = true;
+        var after = Snapshot((AtkResNode*)text);
+        if (after != before) list.Add(new(before, after));
+        changes = list.ToArray();
         return true;
     }
 
