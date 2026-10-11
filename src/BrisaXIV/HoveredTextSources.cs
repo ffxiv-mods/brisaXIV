@@ -16,6 +16,8 @@ internal sealed class HoveredTextSources(IGameGui gui, IDataManager data, ISeStr
 {
     private (DetailKind Kind, uint Action, uint Base, ulong Item) last;
     private volatile IReadOnlyDictionary<string, string> current = new Dictionary<string, string>();
+    // Called with a summary each time the hovered tooltip changes (diagnostic mode only).
+    public Action<string>? Changed { get; set; }
 
     public bool TryResolve(string display, string scope, out string japanese)
         => current.TryGetValue(SourceTextIndex.Key(TextRules.Normalize(display)), out japanese!);
@@ -39,6 +41,8 @@ internal sealed class HoveredTextSources(IGameGui gui, IDataManager data, ISeStr
         // High-quality (+1,000,000) and collectible (+500,000) ids share the base item row.
         if (gui.HoveredItem is > 0 and < 2_000_000) AddRow<Item>(pairs, (uint)(gui.HoveredItem % 500_000), x => x.Description);
         current = pairs;
+        Changed?.Invoke($"tipo={action.DetailKind} acao={action.ActionId} base={action.BaseActionId} item={gui.HoveredItem} avaliados={pairs.Count} "
+            + string.Join(" | ", pairs.Select(x => HudDiagnostics.Quote(x.Key) + "=>" + HudDiagnostics.Quote(x.Value))));
     }
 
     private void AddRow<T>(Dictionary<string, string> pairs, uint id, Func<T, ReadOnlySeString> text) where T : struct, IExcelRow<T>

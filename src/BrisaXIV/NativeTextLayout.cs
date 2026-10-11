@@ -54,6 +54,9 @@ internal sealed unsafe class NativeTextLayout
         }
         if (ConfirmationPrompt(addon, manager, text, addonName))
             return TryPrepareConfirmation(addon, manager, text, original, translation, out result);
+        // Only the description: short single-line labels (name, cast, recast, cost) keep their slots.
+        if (addonName == "ActionDetail" && (text->TextFlags.HasFlag(TextFlags.MultiLine) || text->TextFlags.HasFlag(TextFlags.WordWrap) || translation.Length >= 40))
+            return TryPrepareTooltip(addon, text, original, translation, out result);
         if ((!dialogue && !text->TextFlags.HasFlag(TextFlags.MultiLine)) || text->Width < 60)
         { result = new(plain, translation, []); return true; }
 
@@ -208,6 +211,76 @@ internal sealed unsafe class NativeTextLayout
         result = new(bytes, NativeTextContent.Extract(new ReadOnlySeStringSpan(bytes.AsSpan(0, bytes.Length - 1))), changes.ToArray());
         return true;
     }
+
+    // Tooltips are sized by the game for the English text before PreDraw. The translation is
+    // wrapped to the space inside the window; when it is taller, the window, its background and
+    // everything below the text grow or move down by the same amount. Restore undoes all of it.
+    private static bool TryPrepareTooltip(AtkUnitBase* addon, AtkTextNode* text, ReadOnlySeStringSpan original, string translation, out Result result)
+    {
+        result = null!;
+        var manager = &addon->UldManager;
+        var nodes = LiveNodes(manager);
+        var root = addon->RootNode;
+        if (nodes == null || root == null || !nodes.Contains((nint)root) || root->Width > 2000 || root->ScaleX <= 0) return false;
+        var textNode = (AtkResNode*)text;
+        var insideX = (text->ScreenX - root->ScreenX) / root->ScaleX;
+        var width = (int)Math.Min(Math.Max((int)text->Width, 60), root->Width - insideX - 14);
+        if (width < 60) return false;
+        var flags = text->TextFlags;
+        byte[] bytes;
+        ushort measuredWidth = 0, measuredHeight = 0;
+        try
+        {
+            text->TextFlags = (flags | TextFlags.MultiLine) & ~(TextFlags.WordWrap | TextFlags.Ellipsis | TextFlags.AutoAdjustNodeSize);
+            var textAddress = (nint)text;
+            var wrapped = TextBoxLayout.Wrap(translation, width - 2, value =>
+            {
+                var candidate = NativeTextContent.EncodePlain(value); ushort w = 0, h = 0;
+                fixed (byte* pointer = candidate) ((AtkTextNode*)textAddress)->GetTextDrawSize(&w, &h, pointer);
+                return w;
+            });
+            if (!NativeTextContent.TryReplace(original, wrapped, out bytes)) return false;
+            fixed (byte* pointer = bytes) text->GetTextDrawSize(&measuredWidth, &measuredHeight, pointer);
+        }
+        finally { text->TextFlags = flags; }
+        var required = Math.Max((int)measuredHeight + 2, text->FontSize + 2);
+        var extra = TextBoxLayout.ExtraHeight(required, text->Height);
+        if (required > 1200 || extra > 600) return false;
+        var before = nodes.Select(address => Snapshot((AtkResNode*)address)).ToArray();
+        if (extra > 0)
+        {
+            var scale = root->ScaleY > 0 ? root->ScaleY : 1;
+            var textTop = text->ScreenY;
+            var textBottom = text->ScreenY + text->Height * scale;
+            // The game's resize routine keeps the unit's collision bounds in step with the root.
+            addon->SetSize(root->Width, (ushort)Math.Min(ushort.MaxValue, root->Height + extra));
+            foreach (var address in nodes)
+            {
+                var node = (AtkResNode*)address;
+                if (node == textNode || node == root || node->Height == 0) continue;
+                // Containers and background frames around the description grow with it;
+                // rows that start below it (e.g. notes, costs) move down.
+                if (node->ScreenY <= textTop + 1 && node->ScreenY + node->Height * scale >= textBottom - 1) node->SetHeight((ushort)(node->Height + extra));
+                else if (node->ScreenY >= textBottom - 1 && IsTopLevelBelow(node, textBottom)) node->SetYFloat(node->Y + extra);
+            }
+        }
+        text->SetWidth((ushort)width); text->SetHeight((ushort)required);
+        text->TextFlags = (flags | TextFlags.MultiLine) & ~(TextFlags.WordWrap | TextFlags.Ellipsis | TextFlags.AutoAdjustNodeSize);
+        text->IsDirty = true;
+        var changes = new List<Change>();
+        foreach (var item in before)
+        {
+            if (!nodes.Contains(item.Address) || ((AtkResNode*)item.Address)->NodeId != item.Id) continue;
+            var after = Snapshot((AtkResNode*)item.Address);
+            if (item != after) changes.Add(new(item, after, extra > 0 && item.Address == (nint)root));
+        }
+        result = new(bytes, NativeTextContent.Extract(new ReadOnlySeStringSpan(bytes.AsSpan(0, bytes.Length - 1))), changes.ToArray());
+        return true;
+    }
+
+    // Moving a parent already moves its children; only the outermost node below the text moves.
+    private static bool IsTopLevelBelow(AtkResNode* node, float textBottom)
+        => node->ParentNode == null || node->ParentNode->ScreenY < textBottom - 1;
 
     private static bool Visible(AtkResNode* node)
     {

@@ -225,6 +225,9 @@ internal sealed unsafe class GameTextCapture
                     category == "Falas", addonName, out var layout))
                 {
                     if (saved != null) { textNode->SetText(original.AsSpan()); applied.Remove(address); }
+                    if (diagnose)
+                        Diagnostics!.Record(address, "layout-recusado", addonName,
+                            $"origem={HudDiagnostics.Quote(source)} largura={node->Width} altura={node->Height} flags={textNode->TextFlags} texto-ok={NativeTextContent.CanReplace(seString)}");
                     continue;
                 }
                 textNode->SetText(layout.Bytes.AsSpan());
