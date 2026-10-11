@@ -1,8 +1,8 @@
 # Publicar e instalar pelo Dalamud
 
-A publicação usa **git flow** e é automática. O nome da release no git flow define a versão, no padrão `releaseV<maior>.<menor>.<correção>` (ex.: `releaseV0.0.1`, `releaseV0.0.2`). Não é preciso editar a versão em nenhum arquivo.
+A publicação usa **git flow** e é automática. O nome da release no git flow define a versão, no padrão `ReleaseV<maior>.<menor>.<correção>` (ex.: `ReleaseV0.0.1`, `ReleaseV0.0.2`). Não é preciso editar a versão em nenhum arquivo.
 
-Quando a tag `releaseV…` chega ao GitHub, o workflow `.github/workflows/release.yml` faz o seguinte:
+Quando a tag `ReleaseV…` chega ao GitHub, o workflow `.github/workflows/release.yml` faz o seguinte:
 1. confere se a tag aponta para um commit da **`master`**; se não apontar, recusa;
 2. compila a DLL com a versão da tag e com as referências oficiais do Dalamud, e roda os testes;
 3. gera `latest.zip` (DLL, manifesto e `traducoes.txt`) e `repo.json`;
@@ -27,13 +27,13 @@ Se estiver usando a DLL de desenvolvimento (`Instalar-No-Dalamud.ps1`), desative
 ## Publicar uma nova versão
 
 ```powershell
-git flow release start releaseV0.0.2
-# (opcional) ajustes finais e commits na branch release/releaseV0.0.2
-git flow release finish releaseV0.0.2
+git flow release start ReleaseV0.0.2
+# (opcional) ajustes finais e commits na branch release/ReleaseV0.0.2
+git flow release finish ReleaseV0.0.2
 git push origin master develop --follow-tags
 ```
 
-Acompanhe em **Actions → Release**. Ao terminar, a release `releaseV0.0.2` aparece em **Releases**, e o Dalamud oferece a atualização no `/xlplugins`.
+Acompanhe em **Actions → Release**. Ao terminar, a release `ReleaseV0.0.2` aparece em **Releases**, e o Dalamud oferece a atualização no `/xlplugins`.
 
 - Cada release precisa de um número **maior** que o anterior. O Dalamud só oferece atualização quando a versão sobe.
 - O git flow deste repositório está configurado sem prefixo de tag (`gitflow.prefix.versiontag` vazio). Assim, a tag fica exatamente com o nome da release. Em um clone novo, rode `git config gitflow.prefix.versiontag ""` depois do `git flow init`.

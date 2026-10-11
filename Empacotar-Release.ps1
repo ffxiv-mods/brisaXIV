@@ -1,11 +1,11 @@
 # Gera os dois anexos de uma release instalável pelo Dalamud:
 #   latest.zip  -> DLL, manifesto e TXT de traduções inicial
 #   repo.json   -> entrada do repositório personalizado apontando para o latest.zip desta versão
-# A versão é a da DLL compilada (no CI vem da tag releaseV<versão> via Compilar.ps1 -Version).
+# A versão é a da DLL compilada (no CI vem da tag ReleaseV<versão> via Compilar.ps1 -Version).
 # Usado pelo workflow .github/workflows/release.yml; também roda localmente após Compilar.ps1.
 param(
     [string]$Repository = 'ffxiv-mods/brisaXIV',
-    [string]$TagPrefix = 'releaseV',
+    [string]$TagPrefix = 'ReleaseV',
     [string]$BinaryDirectory = (Join-Path $PSScriptRoot 'plugin'),
     [string]$TranslationsFile = (Join-Path $PSScriptRoot 'plugin\traducoes.txt'),
     [string]$OutputDirectory = (Join-Path $PSScriptRoot 'release')
