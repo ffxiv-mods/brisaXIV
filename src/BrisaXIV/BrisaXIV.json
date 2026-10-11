@@ -1,0 +1,15 @@
+{
+  "Author": "Projeto pessoal de acessibilidade",
+  "Name": "Brisa XIV — Tradução para PT-BR",
+  "InternalName": "BrisaXIV",
+  "AssemblyVersion": "0.8.4.0",
+  "Description": "Tradução para PT-BR na HUD, com TXT permanente e preparação por expansão. Nova interface lateral, progresso, custos estimados da IA por tokens e consulta administrativa opcional à OpenAI. Alerta de créditos/cota e pendências automáticas. OpenAI GPT-6 Luna, DeepL, Google e Ollama. Versão experimental.",
+  "RepoUrl": "https://github.com/BrisasXIV/BrisasXIV",
+  "Punchline": "Leia textos japoneses em português do Brasil.",
+  "ApplicableVersion": "any",
+  "DalamudApiLevel": 15,
+  "LoadRequiredState": 0,
+  "LoadSync": false,
+  "CanUnloadAsync": true,
+  "Tags": ["translation", "accessibility", "pt-br"]
+}

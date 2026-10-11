@@ -1,0 +1,29 @@
+# Desenvolvimento
+
+Requisitos: Windows x64, SDK .NET 10, referências compatíveis com Dalamud API 15 instaladas pelo XIVLauncher em `%APPDATA%\XIVLauncher\addon\Hooks\dev`. As bibliotecas do Dalamud são referenciadas localmente e não são redistribuídas. A validação atual usou Dalamud 15.0.3.6 e SDK 10.0.401.
+
+```powershell
+.\Compilar.ps1
+```
+
+Ou informe um SDK portátil com `-DotnetPath`. O script restaura o TXT inicial compactado, se necessário, compila a DLL em `plugin` e roda os testes. Os testes utilizam arquivos isolados e respostas HTTP simuladas; não exigem chaves reais nem chamam provedores externos. Feche/descarregue o Brisa antes de substituir sua DLL.
+
+- `Plugin.Categories.cs` e `Core/TextCategoryPolicy.cs`: opções de exibição e classificação de cabeçalhos.
+- `Plugin.Dashboard.cs`: páginas, navegação, cartões e tema.
+- `Plugin.Costs.cs`: gráfico diário, tabela de modelos, preços editáveis e consulta de custos.
+- `Core/AIUsage*.cs`: contagem persistente por requisição e consumo informado pelo provedor.
+- `Core/OpenAICosts.cs`: GET administrativo independente, filtros e paginação.
+- `Core/BillingFailure.cs` e `Plugin.BillingAlert.cs`: classificação fixa de saldo/cota e alerta.
+- `Core/TranslationQueue.cs`: lotes, prioridade da HUD, deduplicação e novas tentativas.
+- `Core/BackgroundPreparation.cs` e `CatalogVerification.cs`: retomada e conferência completa.
+- `GameTextCapture.cs`, `NativeText*.cs`: apresentação na HUD e preservação dos nomes.
+
+`uso-ia.jsonl` armazena somente ID aleatório da chamada, horário, provedor/modelo, nível de serviço, estado e contadores de tokens. Não contém os textos ou segredos. Uma chamada começa como pendente; uso válido é registrado antes de validar a tradução. Sem uso informado ou após interrupção, fica desconhecida. Respostas rejeitadas e novas tentativas podem consumir tokens e entram no custo estimado.
+
+As estimativas usam preços editáveis, com distinção de cache, escrita de cache, saída, nível de serviço e contexto longo do Luna. Modelos/níveis desconhecidos ficam sem estimativa. Não use as reservas conservadoras do limitador TPM para faturamento. Alterar a tabela recalcula o histórico; descontos e créditos particulares não são inferidos.
+
+`custos-ia.json` é um relatório de custos da conta/projeto/chave consultado separadamente. A consulta usa credencial administrativa própria, endpoint oficial fixo, redirecionamentos desativados, períodos UTC, limite de páginas e respeito a `Retry-After`. Não publique esse relatório. Falhas de consulta não interrompem traduções. Custos da conta podem incluir outros programas; um zero informado não garante ausência de cobranças futuras.
+
+Para empacotar, execute `Preparar-Publicacao.ps1`. A exportação tem uma lista explícita de arquivos permitidos, separa fonte e anexo instalável e exclui PDBs, configuração, segredos e dados pessoais. O TXT inicial é uma fotografia das linhas completas na hora de exportar, sem bloquear a gravação da instância ativa. Depois, siga `PUBLICAR.md`.
+
+Na instalação normal, o plugin usa `PluginInterface.GetPluginConfigDirectory()` para dados persistentes. Na instalação de desenvolvimento mantém o diretório da DLL. O TXT do pacote é importado somente se ainda não houver um TXT ou sua cópia `.bak`; atualizações não substituem traduções pessoais.

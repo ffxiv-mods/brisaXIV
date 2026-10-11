@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <PlatformTarget>x64</PlatformTarget>
+    <Version>0.8.4</Version>
+    <PathMap>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/../../../..'))=/_/workspace</PathMap>
+    <AssemblyName>BrisaXIV</AssemblyName>
+    <DalamudHome Condition="'$(DalamudHome)' == ''">$(APPDATA)\XIVLauncher\addon\Hooks\dev</DalamudHome>
+    <OutputPath>..\..\plugin\</OutputPath>
+    <UseSharedCompilation>false</UseSharedCompilation>
+    <DefineConstants Condition="'$(BrisaReadOnly)' == 'true'">$(DefineConstants);BRISA_READ_ONLY</DefineConstants>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+    <RestoreIgnoreFailedSources>true</RestoreIgnoreFailedSources>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="Dalamud"><HintPath>$(DalamudHome)\Dalamud.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Dalamud.Bindings.ImGui"><HintPath>$(DalamudHome)\Dalamud.Bindings.ImGui.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="FFXIVClientStructs"><HintPath>$(DalamudHome)\FFXIVClientStructs.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="InteropGenerator.Runtime"><HintPath>$(DalamudHome)\InteropGenerator.Runtime.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Lumina"><HintPath>$(DalamudHome)\Lumina.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Lumina.Excel"><HintPath>$(DalamudHome)\Lumina.Excel.dll</HintPath><Private>false</Private></Reference>
+    <None Update="BrisaXIV.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

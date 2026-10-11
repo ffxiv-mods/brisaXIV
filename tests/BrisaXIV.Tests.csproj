@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType><TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings>
+    <UseSharedCompilation>false</UseSharedCompilation>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <DalamudHome Condition="'$(DalamudHome)' == ''">$(APPDATA)\XIVLauncher\addon\Hooks\dev</DalamudHome>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\src\BrisaXIV\Core\*.cs" Link="Core\%(Filename)%(Extension)" />
+    <Compile Include="..\src\BrisaXIV\KeyProtection.cs" Link="KeyProtection.cs" />
+    <Compile Include="..\src\BrisaXIV\NativeTextContent.cs" Link="NativeTextContent.cs" />
+    <Compile Include="..\src\BrisaXIV\NativeTextLayout.cs" Link="NativeTextLayout.cs" />
+    <Compile Include="..\src\BrisaXIV\JapaneseSourceIndex.cs" Link="JapaneseSourceIndex.cs" />
+    <Reference Include="Lumina"><HintPath>$(DalamudHome)\Lumina.dll</HintPath></Reference>
+    <Reference Include="Lumina.Excel"><HintPath>$(DalamudHome)\Lumina.Excel.dll</HintPath></Reference>
+    <Reference Include="FFXIVClientStructs"><HintPath>$(DalamudHome)\FFXIVClientStructs.dll</HintPath></Reference>
+    <Reference Include="InteropGenerator.Runtime"><HintPath>$(DalamudHome)\InteropGenerator.Runtime.dll</HintPath></Reference>
+  </ItemGroup>
+</Project>
