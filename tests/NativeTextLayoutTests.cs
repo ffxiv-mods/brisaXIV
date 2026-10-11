@@ -13,6 +13,16 @@ internal static unsafe class NativeTextLayoutTests
         Bind(typeof(AtkResNode.Addresses), "SetWidth", (nint)(delegate* unmanaged<AtkResNode*, ushort, void>)&SetWidth);
         Bind(typeof(AtkResNode.Addresses), "SetHeight", (nint)(delegate* unmanaged<AtkResNode*, ushort, void>)&SetHeight);
         Bind(typeof(AtkUnitBase.Addresses), "SetSize", (nint)(delegate* unmanaged<AtkUnitBase*, ushort, ushort, void>)&SetSize);
+        // A Talk line uses the whole balloon, even when the game sized the text node to a short original.
+        AtkResNode talkParent = new() { NodeId = 1, Type = NodeType.Res, Width = 700, Height = 200 };
+        AtkResNode talkBox = new() { NodeId = 10, Type = NodeType.Res, ParentNode = &talkParent, X = 0, Width = 640, Height = 140 };
+        AtkTextNode talkLine = new() { NodeId = 3, Type = NodeType.Text, ParentNode = &talkParent, X = 30, Width = 210, Height = 24 };
+        AtkResNode** talkNodes = stackalloc AtkResNode*[2]; talkNodes[0] = &talkBox; talkNodes[1] = (AtkResNode*)&talkLine;
+        AtkUldManager talkManager = new() { NodeList = talkNodes, NodeListCount = 2 };
+        var talkBackground = NativeTextLayout.Background(&talkManager, &talkLine, "Talk");
+        check(talkBackground == &talkBox && NativeTextLayout.DialogueWidth(&talkLine, talkBackground) == 640 - 30 - 30,
+            "A dialogue line wraps at the balloon's inner width, not at the narrow width of the original line");
+        check(NativeTextLayout.DialogueWidth(&talkLine, null) == 210, "Without a known balloon the text node keeps its own width");
         AtkResNode journalViewport = new() { NodeId = 40, Type = NodeType.Res, Width = 480, Height = 438 };
         AtkResNode journalContent = new() { NodeId = 44, Type = NodeType.Res, ParentNode = &journalViewport };
         AtkTextNode journalDescription = new() { NodeId = 46, Type = NodeType.Text, ParentNode = &journalContent,
