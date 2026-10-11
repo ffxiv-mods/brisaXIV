@@ -32,6 +32,7 @@ internal sealed unsafe class GameTextCapture
           "Config", "ConfigSystem", "ConfigCharacter", "ConfigChara", "ConfigKeybind", "SystemMenu", "MainCommand",
           "Shop", "ShopExchangeItem", "ShopExchangeCurrency", "RetainerList", "Achievement", "RecommendList",
           "HowTo", "Guide", "QuestRedo", "Social", "Buddy", "MountNote", "MinionNote", "FishGuide", "AdventureNoteBook" };
+    private static bool Tooltip(string name) => name is "ActionDetail" or "ItemDetail";
     private static bool Excluded(string name) => name.Contains("Chat", StringComparison.OrdinalIgnoreCase)
         || name.Contains("NamePlate", StringComparison.OrdinalIgnoreCase)
         || name.StartsWith("Letter", StringComparison.Ordinal) || name.Contains("Input", StringComparison.OrdinalIgnoreCase);
@@ -150,7 +151,9 @@ internal sealed unsafe class GameTextCapture
                             applied.Remove(address);
                             saved = null;
                         }
-                        else if ((!active || !Visible(node)) && current == saved.Original)
+                        // Tooltips are hidden and reused between hovers, not faded out: rewriting there
+                        // would show the plain text without its layout until the next frame fixes it.
+                        else if ((!active || !Visible(node)) && current == saved.Original && !Tooltip(addonName))
                         {
                             // The game can repopulate its original as the addon closes.
                             // Keep the last rendered text without any new API request.

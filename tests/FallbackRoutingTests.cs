@@ -76,6 +76,24 @@ internal static class FallbackRoutingTests
             check(journaled.SequenceEqual(new[] { "対象に物理攻撃。　威力：380\tPT:対象に物理攻撃。　威力：380" }), "New translations are also journaled separately in the TXT format");
         }
 
+        // Quest journal text with embedded item or character names has no static original: in game
+        // content it falls back to Google from English, while other windows stay offline.
+        var contentFile = new TranslationFile(Path.Combine(scratch, "fallback-content.txt"));
+        var contentSent = new ConcurrentQueue<(string Language, string Text)>();
+        using (var primary = new TranslationQueue(contentFile, new Translator(new(TranslationProvider.DeepL, "key", false, "", "", GoogleFallback: false), main)))
+        using (var client = new TranslationQueue(contentFile, new Translator(new(TranslationProvider.DeepL, "key", false, "", "", "EN", false), main)))
+        using (var googleJa = new TranslationQueue(contentFile, new Translator(new(TranslationProvider.Google, "", false, "", "", "JA", false), Google(contentSent))))
+        using (var googleClient = new TranslationQueue(contentFile, new Translator(new(TranslationProvider.Google, "", false, "", "", "EN", false), Google(contentSent))))
+        {
+            var router = new TranslationRouter(primary, contentFile, index, true, client, cachedOnly: true, fallback: new(googleJa, googleClient));
+            router.Get("Craft 1 Rakshasa Axe and deliver it to Quswib.", true, "Missões");
+            router.Get("Party member Some Player", true, "Outras janelas");
+            await Until(() => contentFile.TryGet("Craft 1 Rakshasa Axe and deliver it to Quswib.", out _));
+            await Task.Delay(100);
+            check(contentSent.SequenceEqual(new[] { ("en", "Craft 1 Rakshasa Axe and deliver it to Quswib.") }) && mainCalls == 0,
+                "Unmatched quest journal text falls back to Google from English, while other HUD windows stay offline");
+        }
+
         // A failing main provider hands the text to Google instead of leaving it untranslated.
         var failingFile = new TranslationFile(Path.Combine(scratch, "fallback-failure.txt"));
         var failed = new ConcurrentQueue<(string Language, string Text)>();

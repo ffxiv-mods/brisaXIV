@@ -1,4 +1,5 @@
 using BrisaXIV.Core;
+using FFXIVClientStructs.FFXIV.Client.Graphics.Kernel;
 using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using Lumina.Text.ReadOnly;
@@ -7,12 +8,12 @@ namespace BrisaXIV;
 
 internal sealed unsafe class NativeTextLayout
 {
-    internal sealed record State(nint Address, uint Id, float X, float Y, ushort Width, ushort Height, TextFlags? Flags);
+    internal sealed record State(nint Address, uint Id, float X, float Y, ushort Width, ushort Height, TextFlags? Flags, byte? FontSize = null);
     internal sealed record Change(State Original, State Applied, bool UnitSize = false);
     internal sealed record Result(byte[] Bytes, string Rendered, Change[] Changes);
 
     private static State Snapshot(AtkResNode* node) => new((nint)node, node->NodeId, node->X, node->Y, node->Width, node->Height,
-        node->Type == NodeType.Text ? ((AtkTextNode*)node)->TextFlags : null);
+        node->Type == NodeType.Text ? ((AtkTextNode*)node)->TextFlags : null, node->Type == NodeType.Text ? ((AtkTextNode*)node)->FontSize : null);
 
     public static AtkResNode* Background(AtkUldManager* manager, AtkTextNode* text, string addonName)
     {
@@ -49,16 +50,14 @@ internal sealed unsafe class NativeTextLayout
             var beforeJournal = Snapshot((AtkResNode*)text);
             text->TextFlags = (text->TextFlags | TextFlags.MultiLine | TextFlags.WordWrap) & ~TextFlags.Ellipsis;
             text->IsDirty = true;
-            result = new(plain, translation, [new(beforeJournal, Snapshot((AtkResNode*)text))]);
+            result = new(plain, Rendered(plain), [new(beforeJournal, Snapshot((AtkResNode*)text))]);
             return true;
         }
         if (ConfirmationPrompt(addon, manager, text, addonName))
             return TryPrepareConfirmation(addon, manager, text, original, translation, out result);
-        // Only the description: short single-line labels (name, cast, recast, cost) keep their slots.
-        if (addonName == "ActionDetail" && (text->TextFlags.HasFlag(TextFlags.MultiLine) || text->TextFlags.HasFlag(TextFlags.WordWrap) || translation.Length >= 40))
-            return TryPrepareTooltip(addon, text, original, translation, out result);
+        if (addonName is "ActionDetail" or "ItemDetail") return TryPrepareTooltip(addon, text, original, translation, out result);
         if ((!dialogue && !text->TextFlags.HasFlag(TextFlags.MultiLine)) || text->Width < 60)
-        { result = new(plain, translation, []); return true; }
+        { result = FitSingleLine(text, plain); return true; }
 
         var before = Snapshot((AtkResNode*)text);
         var background = dialogue ? Background(manager, text, addonName) : null;
@@ -68,7 +67,7 @@ internal sealed unsafe class NativeTextLayout
             var leftInset = text->X - background->X;
             width = Math.Min(width, (int)(background->X + background->Width - text->X - Math.Clamp(leftInset, 8, 36)));
         }
-        if (width < 60) { result = new(plain, translation, []); return true; }
+        if (width < 60) { result = new(plain, Rendered(plain), []); return true; }
         var flags = text->TextFlags;
         string wrapped;
         ushort measuredWidth = 0, measuredHeight = 0;
@@ -224,9 +223,19 @@ internal sealed unsafe class NativeTextLayout
         if (nodes == null || root == null || !nodes.Contains((nint)root) || root->Width > 2000 || root->ScaleX <= 0) return false;
         var textNode = (AtkResNode*)text;
         var insideX = (text->ScreenX - root->ScreenX) / root->ScaleX;
-        var width = (int)Math.Min(Math.Max((int)text->Width, 60), root->Width - insideX - 14);
-        if (width < 60) return false;
+        var available = (int)(root->Width - insideX - 14);
+        var description = text->TextFlags.HasFlag(TextFlags.MultiLine) || text->TextFlags.HasFlag(TextFlags.WordWrap) || translation.Length >= 40;
         var flags = text->TextFlags;
+        // A short label (cast, recast, cost) that fits before the window's right edge keeps its slot.
+        if (!description && !translation.Contains('\n') && NativeTextContent.TryReplace(original, translation, out var label))
+        {
+            ushort labelWidth = 0, labelHeight = 0;
+            fixed (byte* pointer = label) text->GetTextDrawSize(&labelWidth, &labelHeight, pointer);
+            if (labelWidth <= available) { result = new(label, NativeTextContent.Extract(new ReadOnlySeStringSpan(label.AsSpan(0, label.Length - 1))), []); return true; }
+        }
+        // Descriptions wrap in their own width; an overlong label wraps in the space left in the window.
+        var width = description ? Math.Min(Math.Max((int)text->Width, 60), available) : available;
+        if (width < 60) return false;
         byte[] bytes;
         ushort measuredWidth = 0, measuredHeight = 0;
         try
@@ -263,6 +272,11 @@ internal sealed unsafe class NativeTextLayout
                 if (node->ScreenY <= textTop + 1 && node->ScreenY + node->Height * scale >= textBottom - 1) node->SetHeight((ushort)(node->Height + extra));
                 else if (node->ScreenY >= textBottom - 1 && IsTopLevelBelow(node, textBottom)) node->SetYFloat(node->Y + extra);
             }
+            // A taller tooltip near the bottom of the screen moves up instead of being cut off.
+            var device = Device.Instance();
+            var bottom = addon->Y + root->Height * addon->Scale;
+            if (device != null && device->Height > 0 && bottom > device->Height - 8)
+                addon->SetPosition(addon->X, (short)Math.Max(0, addon->Y - (bottom - (device->Height - 8))));
         }
         text->SetWidth((ushort)width); text->SetHeight((ushort)required);
         text->TextFlags = (flags | TextFlags.MultiLine) & ~(TextFlags.WordWrap | TextFlags.Ellipsis | TextFlags.AutoAdjustNodeSize);
@@ -277,6 +291,31 @@ internal sealed unsafe class NativeTextLayout
         result = new(bytes, NativeTextContent.Extract(new ReadOnlySeStringSpan(bytes.AsSpan(0, bytes.Length - 1))), changes.ToArray());
         return true;
     }
+
+    // A fixed-width single-line cell (e.g. a shop column) cannot grow: a longer translation would
+    // spill over the neighboring column. Shrink the font down to 75%, then cut with an ellipsis.
+    private static Result FitSingleLine(AtkTextNode* text, byte[] plain)
+    {
+        var rendered = Rendered(plain);
+        var flags = text->TextFlags;
+        var size = text->FontSize;
+        if (flags.HasFlag(TextFlags.MultiLine) || flags.HasFlag(TextFlags.AutoAdjustNodeSize) || text->Width < 16 || size == 0) return new(plain, rendered, []);
+        var before = Snapshot((AtkResNode*)text);
+        var minimum = (byte)Math.Max(9, size * 3 / 4);
+        ushort width = 0, height = 0;
+        for (var candidate = size; ; candidate--)
+        {
+            text->FontSize = candidate;
+            fixed (byte* pointer = plain) text->GetTextDrawSize(&width, &height, pointer);
+            if (width <= text->Width || candidate <= minimum) break;
+        }
+        if (text->FontSize == size) return new(plain, rendered, []);
+        if (width > text->Width) text->TextFlags = flags | TextFlags.Ellipsis;
+        text->IsDirty = true;
+        return new(plain, rendered, [new(before, Snapshot((AtkResNode*)text))]);
+    }
+
+    private static string Rendered(byte[] bytes) => NativeTextContent.Extract(new ReadOnlySeStringSpan(bytes.AsSpan(0, bytes.Length - 1)));
 
     // Moving a parent already moves its children; only the outermost node below the text moves.
     private static bool IsTopLevelBelow(AtkResNode* node, float textBottom)
@@ -327,7 +366,9 @@ internal sealed unsafe class NativeTextLayout
                 || (change.Original.Width != change.Applied.Width && node->Width != change.Applied.Width)
                 || (change.Original.Height != change.Applied.Height && node->Height != change.Applied.Height)
                 || (node->Type == NodeType.Text && change.Original.Flags != change.Applied.Flags
-                    && ((AtkTextNode*)node)->TextFlags != change.Applied.Flags)) return false;
+                    && ((AtkTextNode*)node)->TextFlags != change.Applied.Flags)
+                || (node->Type == NodeType.Text && change.Original.FontSize != change.Applied.FontSize
+                    && ((AtkTextNode*)node)->FontSize != change.Applied.FontSize)) return false;
         }
         return true;
     }
@@ -358,6 +399,8 @@ internal sealed unsafe class NativeTextLayout
             if (node->Height == change.Applied.Height) node->SetHeight(change.Original.Height);
             if (node->Type == NodeType.Text && change.Original.Flags is { } originalFlags
                 && ((AtkTextNode*)node)->TextFlags == change.Applied.Flags) ((AtkTextNode*)node)->TextFlags = originalFlags;
+            if (node->Type == NodeType.Text && change.Original.FontSize is { } originalSize
+                && ((AtkTextNode*)node)->FontSize == change.Applied.FontSize) ((AtkTextNode*)node)->FontSize = originalSize;
             node->IsDirty = true;
         }
     }
