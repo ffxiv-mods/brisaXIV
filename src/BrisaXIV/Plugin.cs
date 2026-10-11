@@ -34,7 +34,7 @@ public sealed partial class Plugin : IDalamudPlugin
     private TranslationQueue clientQueue;
     private TranslationRouter router;
 #if !BRISA_READ_ONLY
-    // What the main path cannot deliver goes to OpenAI, DeepL and Google, in that order,
+    // What the main path cannot deliver goes to Google, OpenAI and DeepL, in that order,
     // among the providers with a key; see TranslationRouter. Extra queues are owned here.
     private IReadOnlyList<FallbackQueues> fallback = [];
     private readonly List<TranslationQueue> fallbackQueues = [];
@@ -189,16 +189,17 @@ public sealed partial class Plugin : IDalamudPlugin
         if (preparation is { Completed: true }) journal.Append(source, translation);
     }
 
-    // OpenAI, DeepL and Google, in that order, among the providers with a key (Google needs none).
+    // Google, OpenAI and DeepL, in that order, among the providers with a key (Google needs none).
     // The main provider reuses its queues; the others get their own, journaled as new translations.
     private IReadOnlyList<FallbackQueues> MakeFallback()
     {
         foreach (var extra in fallbackQueues) extra.Dispose();
         fallbackQueues.Clear();
         var chain = new List<FallbackQueues>();
+        // Google answers fastest (needs no key), so on-screen text appears sooner; a failure moves on.
+        chain.Add(ProviderQueues(TranslationProvider.Google));
         if (!string.IsNullOrWhiteSpace(openAIApiKey)) chain.Add(ProviderQueues(TranslationProvider.OpenAI));
         if (!string.IsNullOrWhiteSpace(apiKey)) chain.Add(ProviderQueues(TranslationProvider.DeepL));
-        chain.Add(ProviderQueues(TranslationProvider.Google));
         return chain;
     }
 
