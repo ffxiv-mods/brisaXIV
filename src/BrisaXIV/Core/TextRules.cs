@@ -6,6 +6,10 @@ public static class TextRules
 {
     public static string Normalize(string text) => text.Replace("\r\n", "\n").Replace('\r', '\n').Trim();
 
+    // Google sometimes returns names in TeX-style quotes (``name''); show them as typographic quotes.
+    private static readonly System.Text.RegularExpressions.Regex TexQuotes = new("``([^`'\\n]{1,80})''", System.Text.RegularExpressions.RegexOptions.Compiled);
+    public static string NormalizeQuotes(string text) => text.Contains("``") ? TexQuotes.Replace(text, "“$1”") : text;
+
     public static bool ContainsJapanese(string text)
     {
         foreach (var rune in text.EnumerateRunes())

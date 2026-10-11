@@ -39,6 +39,11 @@ Check(NativeTextContent.TryReplace(new ReadOnlySeStringSpan(inlineColor), "Conce
     && NativeTextContent.Extract(new ReadOnlySeStringSpan(highlighted.AsSpan(0, highlighted.Length - 1))) == "Concede Fogo Astral ao usar Gelo."
     && highlighted.AsSpan().IndexOf(highlightedName) > 0,
     "An inline colored name keeps its color on the quoted names of the translation, without the quotes");
+Check(NativeTextContent.TryReplace(new ReadOnlySeStringSpan(inlineColor), "Compre ``Fogo Astral''.", out var texQuoted)
+    && NativeTextContent.Extract(new ReadOnlySeStringSpan(texQuoted.AsSpan(0, texQuoted.Length - 1))) == "Compre Fogo Astral."
+    && texQuoted.AsSpan().IndexOf(highlightedName) > 0
+    && TextRules.NormalizeQuotes("Use ``Equilíbrio de Azeyma'' e ``Torre''.") == "Use “Equilíbrio de Azeyma” e “Torre”.",
+    "Google's TeX-style quotes are recognized as highlighted names and otherwise shown as typographic quotes");
 Check(NativeTextContent.TryReplace(new ReadOnlySeStringSpan(nativeStyled), "Diga “olá”.", out var wrappedQuote)
     && NativeTextContent.Extract(new ReadOnlySeStringSpan(wrappedQuote.AsSpan(0, wrappedQuote.Length - 1))) == "Diga “olá”.",
     "Quotes stay when the original only colors the whole text, with no inline emphasis to move");
