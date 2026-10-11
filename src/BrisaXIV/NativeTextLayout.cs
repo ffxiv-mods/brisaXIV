@@ -56,11 +56,12 @@ internal sealed unsafe class NativeTextLayout
         if (ConfirmationPrompt(addon, manager, text, addonName))
             return TryPrepareConfirmation(addon, manager, text, original, translation, out result);
         if (addonName is "ActionDetail" or "ItemDetail") return TryPrepareTooltip(addon, text, original, translation, out result);
-        if ((!dialogue && !text->TextFlags.HasFlag(TextFlags.MultiLine)) || text->Width < 60)
+        // A dialogue balloon gives the width even when a short original left the text node narrow.
+        var background = dialogue ? Background(manager, text, addonName) : null;
+        if ((!dialogue && !text->TextFlags.HasFlag(TextFlags.MultiLine)) || (background == null && text->Width < 60))
         { result = FitSingleLine(text, plain); return true; }
 
         var before = Snapshot((AtkResNode*)text);
-        var background = dialogue ? Background(manager, text, addonName) : null;
         var width = DialogueWidth(text, background);
         if (width < 60) { result = new(plain, Rendered(plain), []); return true; }
         var available = background != null ? (int)(background->Y + background->Height - text->Y - 16) : (int)text->Height;
@@ -108,12 +109,13 @@ internal sealed unsafe class NativeTextLayout
 
     private static int MinimumDialogueFont(byte font) => Math.Max(10, (int)Math.Ceiling(font * 0.85));
 
-    private static int DialogueWidth(AtkTextNode* text, AtkResNode* background)
+    // A dialogue line uses the whole balloon width (like Echoglossian). The game sizes the text node
+    // to the original line, so its current width would wrap the translation at a fraction of the box.
+    internal static int DialogueWidth(AtkTextNode* text, AtkResNode* background)
     {
-        var width = (int)text->Width;
-        if (background == null) return width;
+        if (background == null) return text->Width;
         var leftInset = text->X - background->X;
-        return Math.Min(width, (int)(background->X + background->Width - text->X - Math.Clamp(leftInset, 8, 36)));
+        return (int)(background->X + background->Width - text->X - Math.Clamp(leftInset, 8, 36));
     }
 
     // Grows a dialogue balloon upwards, keeping its tail and bottom in place.
