@@ -21,7 +21,9 @@ try {
     New-Item -ItemType Directory -Path (Join-Path $env:APPDATA 'NuGet'),$env:LOCALAPPDATA -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'NuGet.Config') -Destination (Join-Path $env:APPDATA 'NuGet\NuGet.Config') -Force
     # -Version (vinda da tag ReleaseV<versão> no CI) sobrescreve <Version> do csproj e, com ela, a versão da DLL.
-    $taskVersionArgs = if ($Version) { @("-p:Version=$Version") } else { @() }
+    # Não use "if" como expressão aqui: ele desfaz o array de um item em string, e @string espalha caractere por caractere.
+    $taskVersionArgs = @()
+    if ($Version) { $taskVersionArgs += "-p:Version=$Version" }
     & $DotnetPath build (Join-Path $PSScriptRoot 'src\BrisaXIV\BrisaXIV.csproj') -c Release --nologo "-p:DalamudHome=$taskDalamud" @taskVersionArgs
     if ($LASTEXITCODE -ne 0) { throw 'A compilação falhou.' }
     & $DotnetPath run --project (Join-Path $PSScriptRoot 'tests\BrisaXIV.Tests.csproj') -c Release "-p:DalamudHome=$taskDalamud" -- (Join-Path $ScratchDirectory 'tests')
