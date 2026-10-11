@@ -60,8 +60,8 @@ internal static class FallbackRoutingTests
         var live = new Live(new() { ["Delivers an attack with a potency of 380."] = "対象に物理攻撃。　威力：380" });
         using (var primary = new TranslationQueue(file, new Translator(new(TranslationProvider.DeepL, "key", false, "", "", GoogleFallback: false), main)))
         using (var client = new TranslationQueue(file, new Translator(new(TranslationProvider.DeepL, "key", false, "", "", "EN", false), main)))
-        using (var googleJa = new TranslationQueue(file, new Translator(new(TranslationProvider.Google, "", false, "", "", "JA", false), Google(sent)), stored: journal.Append))
-        using (var googleClient = new TranslationQueue(file, new Translator(new(TranslationProvider.Google, "", false, "", "", "EN", false), Google(sent)), stored: journal.Append))
+        using (var googleJa = new TranslationQueue(file, new Translator(new(TranslationProvider.Google, "", false, "", "", "JA", false, GoogleDictionaryEndpoint: false), Google(sent)), stored: journal.Append))
+        using (var googleClient = new TranslationQueue(file, new Translator(new(TranslationProvider.Google, "", false, "", "", "EN", false, GoogleDictionaryEndpoint: false), Google(sent)), stored: journal.Append))
         {
             var router = new TranslationRouter(primary, file, index, true, client, cachedOnly: true, fallback: [new(googleJa, googleClient)], live: live);
             check(router.Get("Delivers an attack with a potency of 380.", true, "Itens e ações").Pending, "A tooltip missing from the TXT is queued on Google in TXT-only mode");
@@ -82,8 +82,8 @@ internal static class FallbackRoutingTests
         var contentSent = new ConcurrentQueue<(string Language, string Text)>();
         using (var primary = new TranslationQueue(contentFile, new Translator(new(TranslationProvider.DeepL, "key", false, "", "", GoogleFallback: false), main)))
         using (var client = new TranslationQueue(contentFile, new Translator(new(TranslationProvider.DeepL, "key", false, "", "", "EN", false), main)))
-        using (var googleJa = new TranslationQueue(contentFile, new Translator(new(TranslationProvider.Google, "", false, "", "", "JA", false), Google(contentSent))))
-        using (var googleClient = new TranslationQueue(contentFile, new Translator(new(TranslationProvider.Google, "", false, "", "", "EN", false), Google(contentSent))))
+        using (var googleJa = new TranslationQueue(contentFile, new Translator(new(TranslationProvider.Google, "", false, "", "", "JA", false, GoogleDictionaryEndpoint: false), Google(contentSent))))
+        using (var googleClient = new TranslationQueue(contentFile, new Translator(new(TranslationProvider.Google, "", false, "", "", "EN", false, GoogleDictionaryEndpoint: false), Google(contentSent))))
         {
             var router = new TranslationRouter(primary, contentFile, index, true, client, cachedOnly: true, fallback: [new(googleJa, googleClient)]);
             router.Get("Craft 1 Rakshasa Axe and deliver it to Quswib.", true, "Falas");
@@ -108,8 +108,8 @@ internal static class FallbackRoutingTests
             return new(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(new { translations = texts.Select(x => new { text = "DL:" + x }) })) };
         });
         using (var primary = new TranslationQueue(blockedFile, new Translator(new(TranslationProvider.DeepL, "key", false, "", "", GoogleFallback: false), blockedDeepL)))
-        using (var googleJa = new TranslationQueue(blockedFile, new Translator(new(TranslationProvider.Google, "", false, "", "", "JA", false), blockedGoogle, googleCadence: new GoogleCadence())))
-        using (var googleClient = new TranslationQueue(blockedFile, new Translator(new(TranslationProvider.Google, "", false, "", "", "EN", false), blockedGoogle, googleCadence: new GoogleCadence())))
+        using (var googleJa = new TranslationQueue(blockedFile, new Translator(new(TranslationProvider.Google, "", false, "", "", "JA", false, GoogleDictionaryEndpoint: false), blockedGoogle, googleCadence: new GoogleCadence())))
+        using (var googleClient = new TranslationQueue(blockedFile, new Translator(new(TranslationProvider.Google, "", false, "", "", "EN", false, GoogleDictionaryEndpoint: false), blockedGoogle, googleCadence: new GoogleCadence())))
         {
             var router = new TranslationRouter(primary, blockedFile, index, true, cachedOnly: true, fallback: [new(googleJa, googleClient), new(primary, primary)]);
             router.Get("会話の続き", true, "Falas");
@@ -125,8 +125,8 @@ internal static class FallbackRoutingTests
         var failed = new ConcurrentQueue<(string Language, string Text)>();
         var quota = new Handler(_ => Task.FromResult(new HttpResponseMessage((HttpStatusCode)456)));
         using (var primary = new TranslationQueue(failingFile, new Translator(new(TranslationProvider.DeepL, "key", false, "", "", GoogleFallback: false), quota)))
-        using (var googleJa = new TranslationQueue(failingFile, new Translator(new(TranslationProvider.Google, "", false, "", "", "JA", false), Google(failed))))
-        using (var googleClient = new TranslationQueue(failingFile, new Translator(new(TranslationProvider.Google, "", false, "", "", "EN", false), Google(failed))))
+        using (var googleJa = new TranslationQueue(failingFile, new Translator(new(TranslationProvider.Google, "", false, "", "", "JA", false, GoogleDictionaryEndpoint: false), Google(failed))))
+        using (var googleClient = new TranslationQueue(failingFile, new Translator(new(TranslationProvider.Google, "", false, "", "", "EN", false, GoogleDictionaryEndpoint: false), Google(failed))))
         {
             var router = new TranslationRouter(primary, failingFile, index, true, fallback: [new(primary, primary), new(googleJa, googleClient)]);
             router.Get("失敗する文");
@@ -150,8 +150,8 @@ internal static class FallbackRoutingTests
             return new(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(new { translations = texts.Select(x => new { text = "DL:" + x }) })) };
         });
         using (var primary = new TranslationQueue(chainFile, new Translator(new(TranslationProvider.DeepL, "key", false, "", "", GoogleFallback: false), deepL)))
-        using (var googleJa = new TranslationQueue(chainFile, new Translator(new(TranslationProvider.Google, "", false, "", "", "JA", false), Google(chainGoogle))))
-        using (var googleClient = new TranslationQueue(chainFile, new Translator(new(TranslationProvider.Google, "", false, "", "", "EN", false), Google(chainGoogle))))
+        using (var googleJa = new TranslationQueue(chainFile, new Translator(new(TranslationProvider.Google, "", false, "", "", "JA", false, GoogleDictionaryEndpoint: false), Google(chainGoogle))))
+        using (var googleClient = new TranslationQueue(chainFile, new Translator(new(TranslationProvider.Google, "", false, "", "", "EN", false, GoogleDictionaryEndpoint: false), Google(chainGoogle))))
         {
             var router = new TranslationRouter(primary, chainFile, index, true, cachedOnly: true, fallback: [new(primary, primary), new(googleJa, googleClient)]);
             router.Get("未保存の原文", true, "Menus");
@@ -163,13 +163,84 @@ internal static class FallbackRoutingTests
 
         // A redirect to Google's "unusual traffic" page pauses every translator sharing the cadence.
         var cadence = new GoogleCadence();
-        using (var blocked = new Translator(new(TranslationProvider.Google, "", false, "", "", "EN", false),
+        using (var blocked = new Translator(new(TranslationProvider.Google, "", false, "", "", "EN", false, GoogleDictionaryEndpoint: false),
             new Handler(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.Found))), googleCadence: cadence))
         {
             var error = "";
             try { await blocked.TranslateAsync(["Speak with Ware Wailer."], CancellationToken.None); }
-            catch (TranslationException ex) { error = ex.Message; check(ex.RetryAfter == GoogleCadence.BlockPause, "A Google block schedules the retry after the block pause"); }
-            check(error.Contains("bloqueou") && cadence.Wait > 60_000, "A Google redirect is treated as a temporary block that pauses every queue sharing the cadence");
+            catch (TranslationException ex) { error = ex.Message; check(ex.RetryAfter == GoogleCadence.FirstBlockPause, "A first Google block schedules the retry after the short block pause"); }
+            check(error.Contains("bloqueou") && cadence.Wait > 10_000 && cadence.Wait <= 20_000, "A Google redirect is treated as a temporary block that pauses every queue sharing the cadence");
+        }
+
+        // Repeated blocks double the pause up to the maximum; a success resets it.
+        var escalating = new GoogleCadence();
+        var pauses = Enumerable.Range(0, 6).Select(_ => escalating.Blocked()).ToArray();
+        check(pauses[0] == TimeSpan.FromSeconds(20) && pauses[1] == TimeSpan.FromSeconds(40) && pauses[2] == TimeSpan.FromSeconds(80)
+            && pauses[5] == GoogleCadence.MaxBlockPause, "Consecutive Google blocks escalate the pause from 20 seconds up to 5 minutes");
+        escalating.Succeeded();
+        check(escalating.Blocked() == GoogleCadence.FirstBlockPause, "A Google success resets the block pause");
+
+        // The dictionary-extension endpoint translates first, by GET with its extension referer.
+        var dictionaryRequests = new ConcurrentQueue<HttpRequestMessage>();
+        using (var dictionary = new Translator(new(TranslationProvider.Google, "", false, "", "", "JA", false),
+            new Handler(request =>
+            {
+                dictionaryRequests.Enqueue(request);
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                { Content = new StringContent(JsonSerializer.Serialize(new { status = 200, translateResponse = new { translateText = "Bem-vindo, aventureiro.", detectedSourceLanguage = "ja" } })) });
+            }), googleCadence: new GoogleCadence()))
+        {
+            var translated = await dictionary.TranslateAsync(["冒険者さん、ようこそ。"], CancellationToken.None);
+            var request = dictionaryRequests.Single();
+            var query = request.RequestUri!.Query;
+            check(translated.Single() == "Bem-vindo, aventureiro." && request.Method == HttpMethod.Get
+                && request.RequestUri.Host == "dictionaryextension-pa.googleapis.com" && query.Contains("language=pt-BR")
+                && Uri.UnescapeDataString(query).Contains("冒険者さん、ようこそ。")
+                && request.Headers.GetValues("x-referer").Single().StartsWith("chrome-extension://"),
+                "Google uses the dictionary-extension endpoint first, like Echoglossian");
+        }
+
+        // A blocked dictionary endpoint falls back to gtx without pausing the queues.
+        var fallbackHosts = new ConcurrentQueue<string>();
+        var fallbackCadence = new GoogleCadence();
+        using (var dictionaryBlocked = new Translator(new(TranslationProvider.Google, "", false, "", "", "JA", false),
+            new Handler(request =>
+            {
+                fallbackHosts.Enqueue(request.RequestUri!.Host);
+                return Task.FromResult(request.RequestUri.Host == "dictionaryextension-pa.googleapis.com"
+                    ? new HttpResponseMessage(HttpStatusCode.TooManyRequests)
+                    : new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(new object[] { new object[] { new object[] { "Pela gtx", "x" } } })) });
+            }), googleCadence: fallbackCadence))
+        {
+            var translated = await dictionaryBlocked.TranslateAsync(["予備の経路"], CancellationToken.None);
+            check(translated.Single() == "Pela gtx" && fallbackHosts.SequenceEqual(new[] { "dictionaryextension-pa.googleapis.com", "translate.googleapis.com" })
+                && fallbackCadence.Wait <= 1_000, "A blocked dictionary endpoint falls back to gtx for the same text without a long pause");
+        }
+
+        // An untranslated echo from the dictionary endpoint also falls back to gtx.
+        var echoHosts = new ConcurrentQueue<string>();
+        using (var echo = new Translator(new(TranslationProvider.Google, "", false, "", "", "JA", false),
+            new Handler(request =>
+            {
+                echoHosts.Enqueue(request.RequestUri!.Host);
+                return Task.FromResult(request.RequestUri.Host == "dictionaryextension-pa.googleapis.com"
+                    ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(new { translateResponse = new { translateText = "そのまま" } })) }
+                    : new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(new object[] { new object[] { new object[] { "Traduzido", "x" } } })) });
+            }), googleCadence: new GoogleCadence()))
+        {
+            check((await echo.TranslateAsync(["そのまま"], CancellationToken.None)).Single() == "Traduzido" && echoHosts.Count == 2,
+                "An unchanged echo from the dictionary endpoint is not saved; gtx translates it instead");
+        }
+
+        // When both endpoints are blocked, every queue pauses briefly.
+        var bothCadence = new GoogleCadence();
+        using (var bothBlocked = new Translator(new(TranslationProvider.Google, "", false, "", "", "JA", false),
+            new Handler(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.TooManyRequests))), googleCadence: bothCadence))
+        {
+            TimeSpan? retry = null;
+            try { await bothBlocked.TranslateAsync(["両方"], CancellationToken.None); }
+            catch (TranslationException ex) { retry = ex.RetryAfter; }
+            check(retry == GoogleCadence.FirstBlockPause && bothCadence.Wait > 10_000, "Only a block on every Google endpoint pauses the queues");
         }
 
         // Talk lines written into the game's refresh values map back to their source, within a bounded memory.

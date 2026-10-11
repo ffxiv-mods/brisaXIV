@@ -32,7 +32,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'A compilação final falhou. A DLL atual foi preservada.' }
     $taskBytes = [System.IO.File]::ReadAllBytes((Join-Path $taskStaging 'BrisaXIV.dll'))
     $taskStrings = [System.Text.Encoding]::Unicode.GetString($taskBytes) + [System.Text.Encoding]::Unicode.GetString($taskBytes,1,$taskBytes.Length-1)
-    if ($taskStrings.Contains('api-free.deepl.com') -or $taskStrings.Contains('translate.googleapis.com') -or $taskStrings.Contains('api.openai.com') -or $taskStrings.Contains('/api/generate')) { throw 'A DLL ainda contém endpoints online. A DLL atual foi preservada.' }
+    if ($taskStrings.Contains('api-free.deepl.com') -or $taskStrings.Contains('translate.googleapis.com') -or $taskStrings.Contains('dictionaryextension-pa.googleapis.com') -or $taskStrings.Contains('api.openai.com') -or $taskStrings.Contains('/api/generate')) { throw 'A DLL ainda contém endpoints online. A DLL atual foi preservada.' }
     $taskRecovery = Join-Path $taskPluginRoot ('backup-preparador-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
     New-Item -ItemType Directory -Path $taskRecovery -Force | Out-Null
     foreach ($taskName in @('BrisaXIV.dll','BrisaXIV.pdb','BrisaXIV.json','BrisaXIV.deps.json')) {
