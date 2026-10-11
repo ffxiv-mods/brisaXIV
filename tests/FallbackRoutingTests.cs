@@ -76,8 +76,8 @@ internal static class FallbackRoutingTests
             check(journaled.SequenceEqual(new[] { "対象に物理攻撃。　威力：380\tPT:対象に物理攻撃。　威力：380" }), "New translations are also journaled separately in the TXT format");
         }
 
-        // Quest journal text with embedded item or character names has no static original: in game
-        // content it falls back to Google from English, while other windows stay offline.
+        // A dialogue sentence with embedded names has no static original: it falls back to Google from
+        // English. Labels, names and counters elsewhere (quest windows included) stay offline.
         var contentFile = new TranslationFile(Path.Combine(scratch, "fallback-content.txt"));
         var contentSent = new ConcurrentQueue<(string Language, string Text)>();
         using (var primary = new TranslationQueue(contentFile, new Translator(new(TranslationProvider.DeepL, "key", false, "", "", GoogleFallback: false), main)))
@@ -86,12 +86,38 @@ internal static class FallbackRoutingTests
         using (var googleClient = new TranslationQueue(contentFile, new Translator(new(TranslationProvider.Google, "", false, "", "", "EN", false), Google(contentSent))))
         {
             var router = new TranslationRouter(primary, contentFile, index, true, client, cachedOnly: true, fallback: [new(googleJa, googleClient)]);
-            router.Get("Craft 1 Rakshasa Axe and deliver it to Quswib.", true, "Missões");
+            router.Get("Craft 1 Rakshasa Axe and deliver it to Quswib.", true, "Falas");
             router.Get("Party member Some Player", true, "Outras janelas");
+            router.Get("Required Class/Job: Warrior", true, "Missões");
+            router.Get("Pelupelu Peddler", true, "Falas");
             await Until(() => contentFile.TryGet("Craft 1 Rakshasa Axe and deliver it to Quswib.", out _));
             await Task.Delay(100);
             check(contentSent.SequenceEqual(new[] { ("en", "Craft 1 Rakshasa Axe and deliver it to Quswib.") }) && mainCalls == 0,
-                "Unmatched quest journal text falls back to Google from English, while other HUD windows stay offline");
+                "Only an unmatched dialogue sentence falls back to Google from English; quest labels, names and other windows stay offline");
+        }
+
+        // When Google is blocked, a game original kept idle only by TXT-only mode goes to the main provider.
+        var blockedFile = new TranslationFile(Path.Combine(scratch, "fallback-blocked.txt"));
+        var blockedMain = new ConcurrentQueue<string>();
+        var blockedGoogle = new Handler(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.Found)));
+        var blockedDeepL = new Handler(async request =>
+        {
+            using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync());
+            var texts = body.RootElement.GetProperty("text").EnumerateArray().Select(x => x.GetString()!).ToArray();
+            foreach (var text in texts) blockedMain.Enqueue(text);
+            return new(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(new { translations = texts.Select(x => new { text = "DL:" + x }) })) };
+        });
+        using (var primary = new TranslationQueue(blockedFile, new Translator(new(TranslationProvider.DeepL, "key", false, "", "", GoogleFallback: false), blockedDeepL)))
+        using (var googleJa = new TranslationQueue(blockedFile, new Translator(new(TranslationProvider.Google, "", false, "", "", "JA", false), blockedGoogle, googleCadence: new GoogleCadence())))
+        using (var googleClient = new TranslationQueue(blockedFile, new Translator(new(TranslationProvider.Google, "", false, "", "", "EN", false), blockedGoogle, googleCadence: new GoogleCadence())))
+        {
+            var router = new TranslationRouter(primary, blockedFile, index, true, cachedOnly: true, fallback: [new(googleJa, googleClient), new(primary, primary)]);
+            router.Get("会話の続き", true, "Falas");
+            await Until(() => googleJa.Get("会話の続き", false).Error != null);
+            router.Get("会話の続き", true, "Falas");
+            await Until(() => blockedFile.TryGet("会話の続き", out _));
+            check(blockedMain.SequenceEqual(new[] { "会話の続き" }) && blockedFile.TryGet("会話の続き", out var rescuedLine) && rescuedLine == "DL:会話の続き",
+                "A Google block hands a waiting line to the main provider instead of leaving it in English");
         }
 
         // A failing main provider hands the text to Google instead of leaving it untranslated.
