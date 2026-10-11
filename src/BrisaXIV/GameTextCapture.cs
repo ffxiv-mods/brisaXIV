@@ -21,16 +21,27 @@ internal sealed unsafe class GameTextCapture
     // Recently written translations (bounded), keyed like the source index to ignore wrapping.
     private readonly HashSet<string> own = new(StringComparer.Ordinal);
     private readonly Queue<string> ownOrder = new();
+    // Same texts without spaces, line breaks or hyphens: the game can re-wrap a translated line at a
+    // hyphen ("vê-\nlo"), which changes the spaced key but not this one.
+    private readonly HashSet<string> ownCompact = new(StringComparer.Ordinal);
+    private static string CompactKey(string text) => new(SourceTextIndex.Key(SourceTextIndex.WithoutIcons(text))
+        .Where(c => !char.IsWhiteSpace(c) && c is not ('-' or '­' or '‐')).ToArray());
     private void RememberOwn(string rendered)
     {
         var key = SourceTextIndex.Key(rendered);
         if (key.Length == 0 || !own.Add(key)) return;
+        ownCompact.Add(CompactKey(rendered));
         ownOrder.Enqueue(key);
-        while (ownOrder.Count > 2048) own.Remove(ownOrder.Dequeue());
+        while (ownOrder.Count > 2048)
+        {
+            var oldest = ownOrder.Dequeue();
+            own.Remove(oldest);
+            ownCompact.Remove(CompactKey(oldest));
+        }
     }
     private bool IsOwn(string text)
     {
-        if (own.Contains(SourceTextIndex.Key(text))) return true;
+        if (own.Contains(SourceTextIndex.Key(text)) || ownCompact.Contains(CompactKey(text))) return true;
         // The HUD can redraw a translated line with an icon added or cut with an ellipsis; that
         // variant is still this capture's own text and must not be sent as a new source.
         if (SourceTextIndex.HasIcons(text) && own.Contains(SourceTextIndex.Key(SourceTextIndex.WithoutIcons(text)))) return true;
