@@ -30,6 +30,8 @@ Na instalação normal, o plugin usa `PluginInterface.GetPluginConfigDirectory()
 
 ## Fallback do Google e traduções novas
 
+- `Core/GoogleWebEndpoints.cs`: `GoogleDictionaryEndpoint` (extensão de dicionário do Chrome, GET com chave pública e `x-referer`) é tentado antes de `GoogleGtxEndpoint` (`translate_a/single`, POST). `TranslatorOptions.GoogleDictionaryEndpoint` (padrão `true`) liga o primeiro; os testes de fila sobre o formato gtx o desligam. `Core/GoogleCadence.cs`: uma requisição por segundo compartilhada por todas as filas; só um bloqueio de todos os endpoints pausa as filas, por 20 s, dobrando até 5 min e zerando no primeiro sucesso.
+
 - `Core/TranslationRouter.cs`: com `FallbackQueues`, o que o caminho principal não entrega vai para filas do Google Tradutor: textos que resolvem para um original japonês mas faltam no TXT no modo "HUD lê somente o TXT", e textos cujo provedor principal falhou. Texto do idioma do cliente sem original japonês (contadores, nomes de jogadores) só sai depois de uma falha real, nunca por conta própria no modo TXT. Opção: `GoogleForMissing`.
 - `HoveredTextSources.cs`: avalia com `ISeStringEvaluator` a descrição da ação, traço ou item sob o cursor, no idioma do cliente e em japonês. As macros (potência, trechos por nível) somem do índice estático, então o tooltip só casa com o original por esse caminho.
 - `Core/SourceTextIndex.cs`: busca sem diferenciar maiúsculas para textos de até 80 caracteres (nomes de inimigos são guardados em minúsculas) e escopo `Nomes`, vindo de `BNpcName`, `ENpcResident` e `EObjName`, que resolve nomes ambíguos no resto do jogo.

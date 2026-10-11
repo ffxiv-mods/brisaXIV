@@ -10,6 +10,27 @@ public static class TextRules
     private static readonly System.Text.RegularExpressions.Regex TexQuotes = new("``([^`'\\n]{1,80})''", System.Text.RegularExpressions.RegexOptions.Compiled);
     public static string NormalizeQuotes(string text) => text.Contains("``") ? TexQuotes.Replace(text, "“$1”") : text;
 
+    // Japanese dialogue carries manual line breaks sized for Japanese text, and translations keep them.
+    // In a dialogue box they become short, uneven lines, so the lines are joined into one flowing text
+    // and the game's word wrap distributes the words across the box width (as Echoglossian does).
+    public static string FlowDialogue(string text)
+    {
+        if (text.IndexOf('\n') < 0) return text;
+        var lines = Normalize(text).Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var result = new StringBuilder(text.Length);
+        foreach (var line in lines)
+        {
+            // Japanese (left untranslated) joins without a space; other text joins with one.
+            if (result.Length > 0 && !(JoinsWithoutSpace(result[^1]) && JoinsWithoutSpace(line[0]))) result.Append(' ');
+            result.Append(line);
+        }
+        return result.ToString();
+    }
+
+    // Japanese letters plus Japanese and full-width punctuation, which take no space between lines.
+    private static bool JoinsWithoutSpace(char c) => c is >= '　' and <= 'ヿ' or >= '㐀' and <= '鿿'
+        or >= '豈' and <= '﫿' or >= '！' and <= 'ﾝ';
+
     public static bool ContainsJapanese(string text)
     {
         foreach (var rune in text.EnumerateRunes())

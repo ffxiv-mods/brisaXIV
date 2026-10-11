@@ -12,6 +12,7 @@ public sealed partial class Translator : IDisposable
     private readonly TranslatorOptions options;
     private long googleUntil;
     private readonly GoogleCadence googleCadence;
+    private readonly IReadOnlyList<IGoogleEndpoint> googleEndpoints;
     public bool UsingGoogleFallback => options.Provider == TranslationProvider.DeepL && Interlocked.Read(ref googleUntil) > DateTimeOffset.UtcNow.ToUnixTimeSeconds();
     public string SourceLanguage => options.SourceLanguage;
     public int RequestsPerMinute => options.OpenAIRequestsPerMinute;
@@ -25,6 +26,9 @@ public sealed partial class Translator : IDisposable
         this.options = options;
         this.aiUsage = aiUsage;
         this.googleCadence = googleCadence ?? new GoogleCadence();
+        googleEndpoints = options.GoogleDictionaryEndpoint
+            ? [new GoogleDictionaryEndpoint(), new GoogleGtxEndpoint()]
+            : [new GoogleGtxEndpoint()];
         this.openAIRateLimiter = openAIRateLimiter ?? new OpenAIRateLimiter();
         this.openAIDiagnostic = openAIDiagnostic;
         client = new HttpClient(handler ?? new HttpClientHandler { AllowAutoRedirect = false })
@@ -171,29 +175,11 @@ public sealed partial class Translator : IDisposable
             Report(progress, TranslationStage.WaitingLimit, texts, "Google", results.Count);
             if (wait > 0) await Task.Delay(TimeSpan.FromMilliseconds(wait), token).ConfigureAwait(false);
             if (shouldYield?.Invoke() == true) throw new TranslationYieldException();
-            // Public web endpoint, without borrowed API keys or browser identity headers.
-            // POST keeps the game text out of the request URL. No redirects forward any credentials.
-            using var request = new HttpRequestMessage(HttpMethod.Post, "https://translate.googleapis.com/translate_a/single");
-            request.Content = new FormUrlEncodedContent(new Dictionary<string, string>
-            { ["client"] = "gtx", ["sl"] = options.SourceLanguage.ToLowerInvariant(), ["tl"] = "pt-BR", ["dt"] = "t", ["q"] = text });
             token.ThrowIfCancellationRequested();
             Report(progress, TranslationStage.AwaitingResponse, texts, "Google", results.Count, sent: true);
-            using var response = await client.SendAsync(request, token).ConfigureAwait(false);
+            // No redirects are followed, so no request is forwarded elsewhere.
+            var translated = await GoogleEndpointsAsync(text, token).ConfigureAwait(false);
             Report(progress, TranslationStage.Validating, texts, "Google", results.Count);
-            googleCadence.Sent();
-            if ((int)response.StatusCode is 302 or 403 or 429)
-            {
-                // A redirect to Google's "unusual traffic" page is a temporary block for this
-                // connection: every queue waits instead of repeating the request.
-                googleCadence.Blocked();
-                throw new TranslationException($"Google Tradutor bloqueou temporariamente por excesso de pedidos (HTTP {(int)response.StatusCode}). Nova tentativa em 5 minutos.", retryAfter: GoogleCadence.BlockPause);
-            }
-            if (!response.IsSuccessStatusCode)
-                throw new TranslationException($"Google Tradutor indisponível (HTTP {(int)response.StatusCode}). Nova tentativa agendada.");
-            using var json = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(token).ConfigureAwait(false), cancellationToken: token).ConfigureAwait(false);
-            var translated = TextRules.NormalizeQuotes(string.Concat(json.RootElement[0].EnumerateArray()
-                .Where(segment => segment.ValueKind == JsonValueKind.Array && segment.GetArrayLength() > 0 && segment[0].ValueKind == JsonValueKind.String)
-                .Select(segment => segment[0].GetString())));
             Validate(1, [translated]);
             Report(progress, TranslationStage.Saving, texts, "Google", results.Count);
             results.Add(translated);
@@ -201,6 +187,46 @@ public sealed partial class Translator : IDisposable
         }
         return results;
     }
+
+    // Tries each Google endpoint in order. Only when every endpoint is blocked do all queues pause.
+    private async Task<string> GoogleEndpointsAsync(string text, CancellationToken token)
+    {
+        var lastBlock = 0;
+        var lastFailure = 0;
+        for (var i = 0; i < googleEndpoints.Count; i++)
+        {
+            GoogleEndpointResult result;
+            try
+            {
+                result = await googleEndpoints[i].TranslateAsync(client, text, options.SourceLanguage, token).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (i < googleEndpoints.Count - 1 && !token.IsCancellationRequested && ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+            {
+                // A network error or timeout on one endpoint moves on to the next one.
+                result = GoogleEndpointResult.Failed();
+            }
+            googleCadence.Sent();
+            if (result.Status == GoogleEndpointStatus.Translated)
+            {
+                googleCadence.Succeeded();
+                return result.Text;
+            }
+            if (result.Status == GoogleEndpointStatus.Blocked) lastBlock = result.HttpStatus;
+            else lastFailure = result.HttpStatus;
+        }
+        if (lastBlock != 0 && lastFailure == 0)
+        {
+            var pause = googleCadence.Blocked();
+            throw new TranslationException($"Google Tradutor bloqueou temporariamente por excesso de pedidos (HTTP {lastBlock}). Nova tentativa em {FormatPause(pause)}.", retryAfter: pause);
+        }
+        throw new TranslationException(lastFailure != 0
+            ? $"Google Tradutor indisponível (HTTP {lastFailure}). Nova tentativa agendada."
+            : "Google Tradutor não devolveu tradução. Nova tentativa agendada.");
+    }
+
+    private static string FormatPause(TimeSpan pause) => pause.TotalMinutes >= 1
+        ? $"{Math.Round(pause.TotalMinutes):0} minuto(s)"
+        : $"{Math.Round(pause.TotalSeconds):0} segundos";
 
     private static void Validate(int expected, IReadOnlyList<string> output)
     {

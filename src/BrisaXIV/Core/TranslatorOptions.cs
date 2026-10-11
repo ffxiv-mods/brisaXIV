@@ -6,7 +6,9 @@ public sealed record TranslatorOptions(
     TranslationProvider Provider, string ApiKey, bool DeepLPro, string OllamaUrl, string OllamaModel,
     string SourceLanguage = "JA", bool GoogleFallback = true,
     string OpenAIApiKey = "", string OpenAIModel = "gpt-6-luna",
-    int OpenAIRequestsPerMinute = 5000, int OpenAITokensPerMinute = 2_000_000);
+    int OpenAIRequestsPerMinute = 5000, int OpenAITokensPerMinute = 2_000_000,
+    // Tries Google's dictionary-extension endpoint before translate_a/single (gtx).
+    bool GoogleDictionaryEndpoint = true);
 
 public class TranslationException(string message, bool stopRequests = false, bool isolatedFailure = false, TimeSpan? retryAfter = null, string? billingFailureCode = null) : Exception(message)
 {

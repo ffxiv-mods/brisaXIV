@@ -31,7 +31,10 @@ internal sealed unsafe class TalkRefreshTranslation(Func<TranslationRouter> rout
         // A refresh can carry a line this class already translated; its source is the original.
         var source = injected.TryGetOriginal(text, out var original) ? original : text;
         var result = line ? router().Get(source, true, "Falas", priority: true) : router().Get(source, true, SourceTextIndex.NamesScope);
-        if (result.Text is not { } translation || !NativeTextContent.TryReplace(shown, translation, out var bytes)) return;
+        if (result.Text is not { } translation) return;
+        // The game wraps the line itself: Japanese manual breaks would only make short, uneven lines.
+        if (line) translation = TextRules.FlowDialogue(translation);
+        if (!NativeTextContent.TryReplace(shown, translation, out var bytes)) return;
         var content = bytes.AsSpan(0, bytes.Length - 1);
         value->SetManagedString(content);
         injected.Add(NativeTextContent.Extract(new ReadOnlySeStringSpan(content)), source);
