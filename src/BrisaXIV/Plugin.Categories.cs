@@ -120,7 +120,8 @@ public sealed partial class Plugin
             ImGui.PushID(category);
             if (ImGui.CollapsingHeader(category))
             {
-                var title = config.TextPartEnabled(category, true);
+                // Quest and item names are content headings of their category, not window frame titles.
+                var title = config.TextPartEnabled(category, true, windowFrame: category is not ("Missões" or "Itens"));
                 var description = config.TextPartEnabled(category, false);
                 var titleHelp = category switch
                 {

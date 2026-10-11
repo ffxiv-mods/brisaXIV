@@ -134,13 +134,14 @@ internal sealed unsafe class GameTextCapture
                 var source = current;
                 var originalSource = applied.TryGetValue(address, out var prior) ? prior.Original : source;
                 var characterName = DialoguePresentation.IsSpeakerName(addonName, node->NodeId) || npcNames.Contains(originalSource);
-                var heading = TextCategoryPolicy.IsWindowHeading(windowComponent, node->NodeId)
-                    || addonName == "ItemDetail" && ((AddonItemDetail*)addon)->ItemNameText == textNode
+                var frameHeading = TextCategoryPolicy.IsWindowHeading(windowComponent, node->NodeId);
+                var contentHeading = addonName == "ItemDetail" && ((AddonItemDetail*)addon)->ItemNameText == textNode
                     || addonName == "JournalDetail" && ((AddonJournalDetail*)addon)->DutyNameTextNode == textNode
                     || addonName == "JournalAccept" && ((AddonJournalAccept*)addon)->QuestTitleText == textNode;
+                var heading = frameHeading || contentHeading;
                 var partCategory = TextCategoryPolicy.PartCategory(addonName, category);
                 var nodeEnabled = characterName ? config.CharacterNames
-                    : TextCategoryPolicy.IsNodeEnabled(config.TextPartEnabled(partCategory, heading), true, heading, false);
+                    : TextCategoryPolicy.IsNodeEnabled(config.TextPartEnabled(partCategory, heading, windowFrame: frameHeading), true, heading, false);
                 var restoreNode = restore || !nodeEnabled;
                 if (applied.TryGetValue(address, out var saved))
                 {

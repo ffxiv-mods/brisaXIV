@@ -19,8 +19,10 @@ public sealed class Configuration : IPluginConfiguration
     public bool? Collections;
     public Dictionary<string, bool> CategoryTitles = new();
     public Dictionary<string, bool> CategoryDescriptions = new();
-    public bool TextPartEnabled(string category, bool title) => TextCategoryPolicy.PartEnabled(
-        title ? CategoryTitles : CategoryDescriptions, category, title ? WindowTitles : true);
+    // Window frame titles inherit "Títulos de janelas"; a content heading (the quest or item name in
+    // a details window) is part of its category and inherits it, unless its title choice says otherwise.
+    public bool TextPartEnabled(string category, bool title, bool windowFrame = true) => TextCategoryPolicy.PartEnabled(
+        title ? CategoryTitles : CategoryDescriptions, category, !title || !windowFrame || WindowTitles);
     public bool Quests = true;
     public bool? Journal;
     public bool Items = true;
