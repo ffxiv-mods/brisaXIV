@@ -27,6 +27,7 @@ internal static class NativeTextContent
     public static bool TryReplace(ReadOnlySeStringSpan text, string translation, out byte[] replacement)
     {
         replacement = [];
+        translation = Core.TextRules.NormalizeQuotes(translation);
         if (!CanReplace(text) || translation.IndexOfAny(['\0', '\u0002', '\u0003']) >= 0) return false;
         var items = new List<byte[]?>(); // null marks a text position
         foreach (var payload in text)

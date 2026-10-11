@@ -183,9 +183,9 @@ public sealed partial class Translator : IDisposable
             if (!response.IsSuccessStatusCode)
                 throw new TranslationException($"Google Tradutor indisponível (HTTP {(int)response.StatusCode}). Nova tentativa agendada.", retryAfter: (int)response.StatusCode is 403 or 429 ? TimeSpan.FromMinutes(5) : null);
             using var json = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(token).ConfigureAwait(false), cancellationToken: token).ConfigureAwait(false);
-            var translated = string.Concat(json.RootElement[0].EnumerateArray()
+            var translated = TextRules.NormalizeQuotes(string.Concat(json.RootElement[0].EnumerateArray()
                 .Where(segment => segment.ValueKind == JsonValueKind.Array && segment.GetArrayLength() > 0 && segment[0].ValueKind == JsonValueKind.String)
-                .Select(segment => segment[0].GetString()));
+                .Select(segment => segment[0].GetString())));
             Validate(1, [translated]);
             Report(progress, TranslationStage.Saving, texts, "Google", results.Count);
             results.Add(translated);

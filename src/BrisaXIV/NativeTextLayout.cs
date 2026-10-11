@@ -220,9 +220,8 @@ internal sealed unsafe class NativeTextLayout
         var manager = &addon->UldManager;
         var nodes = LiveNodes(manager);
         var root = addon->RootNode;
-        if (nodes == null || root == null || !nodes.Contains((nint)root) || root->Width > 2000 || root->ScaleX <= 0) return false;
-        var textNode = (AtkResNode*)text;
-        var insideX = (text->ScreenX - root->ScreenX) / root->ScaleX;
+        if (nodes == null || root == null || !nodes.Contains((nint)root) || root->Width > 2000 || !IsInside((AtkResNode*)text, root)) return false;
+        var insideX = LocalX((AtkResNode*)text, root);
         var available = (int)(root->Width - insideX - 14);
         var description = text->TextFlags.HasFlag(TextFlags.MultiLine) || text->TextFlags.HasFlag(TextFlags.WordWrap) || translation.Length >= 40;
         var flags = text->TextFlags;
@@ -253,25 +252,26 @@ internal sealed unsafe class NativeTextLayout
         }
         finally { text->TextFlags = flags; }
         var required = Math.Max((int)measuredHeight + 2, text->FontSize + 2);
-        var extra = TextBoxLayout.ExtraHeight(required, text->Height);
-        if (required > 1200 || extra > 600) return false;
-        var before = nodes.Select(address => Snapshot((AtkResNode*)address)).ToArray();
+        if (required > 1200) return false;
+        // Every size below comes from the game's own layout for this text, recorded the first time:
+        // re-applying after the game refreshes part of the window sets the same values instead of
+        // adding the growth again (which made the tooltip climb up the screen).
+        var key = ((nint)addon, (nint)text, NativeTextContent.Extract(original));
+        if (!tooltipBaselines.TryGetValue(key, out var baseline) || !baseline.Matches(nodes))
+        {
+            if (tooltipBaselines.Count > 128) tooltipBaselines.Clear();
+            tooltipBaselines[key] = baseline = TooltipBaseline.Capture(root, text, nodes);
+        }
+        var extra = TextBoxLayout.ExtraHeight(required, baseline.Text.Height);
+        if (extra > 600) return false;
+        var touched = new List<State> { baseline.Text };
         if (extra > 0)
         {
-            var scale = root->ScaleY > 0 ? root->ScaleY : 1;
-            var textTop = text->ScreenY;
-            var textBottom = text->ScreenY + text->Height * scale;
             // The game's resize routine keeps the unit's collision bounds in step with the root.
-            addon->SetSize(root->Width, (ushort)Math.Min(ushort.MaxValue, root->Height + extra));
-            foreach (var address in nodes)
-            {
-                var node = (AtkResNode*)address;
-                if (node == textNode || node == root || node->Height == 0) continue;
-                // Containers and background frames around the description grow with it;
-                // rows that start below it (e.g. notes, costs) move down.
-                if (node->ScreenY <= textTop + 1 && node->ScreenY + node->Height * scale >= textBottom - 1) node->SetHeight((ushort)(node->Height + extra));
-                else if (node->ScreenY >= textBottom - 1 && IsTopLevelBelow(node, textBottom)) node->SetYFloat(node->Y + extra);
-            }
+            if (root->Height != baseline.Root.Height + extra) addon->SetSize(root->Width, (ushort)(baseline.Root.Height + extra));
+            touched.Add(baseline.Root);
+            foreach (var state in baseline.Containers) { ((AtkResNode*)state.Address)->SetHeight((ushort)(state.Height + extra)); touched.Add(state); }
+            foreach (var state in baseline.Below) { ((AtkResNode*)state.Address)->SetYFloat(state.Y + extra); touched.Add(state); }
             // A taller tooltip near the bottom of the screen moves up instead of being cut off.
             var device = Device.Instance();
             var bottom = addon->Y + root->Height * addon->Scale;
@@ -279,17 +279,70 @@ internal sealed unsafe class NativeTextLayout
                 addon->SetPosition(addon->X, (short)Math.Max(0, addon->Y - (bottom - (device->Height - 8))));
         }
         text->SetWidth((ushort)width); text->SetHeight((ushort)required);
-        text->TextFlags = (flags | TextFlags.MultiLine) & ~(TextFlags.WordWrap | TextFlags.Ellipsis | TextFlags.AutoAdjustNodeSize);
+        text->TextFlags = (baseline.Text.Flags ?? flags | TextFlags.MultiLine) | TextFlags.MultiLine;
+        text->TextFlags &= ~(TextFlags.WordWrap | TextFlags.Ellipsis | TextFlags.AutoAdjustNodeSize);
         text->IsDirty = true;
         var changes = new List<Change>();
-        foreach (var item in before)
+        foreach (var state in touched)
         {
-            if (!nodes.Contains(item.Address) || ((AtkResNode*)item.Address)->NodeId != item.Id) continue;
-            var after = Snapshot((AtkResNode*)item.Address);
-            if (item != after) changes.Add(new(item, after, extra > 0 && item.Address == (nint)root));
+            var after = Snapshot((AtkResNode*)state.Address);
+            // The root's position is the game's to manage; only its size is ours to undo.
+            var originalState = state.Address == (nint)root ? state with { X = after.X, Y = after.Y } : state;
+            if (originalState != after) changes.Add(new(originalState, after, state.Address == (nint)root));
         }
-        result = new(bytes, NativeTextContent.Extract(new ReadOnlySeStringSpan(bytes.AsSpan(0, bytes.Length - 1))), changes.ToArray());
+        result = new(bytes, Rendered(bytes), changes.ToArray());
         return true;
+    }
+
+    private static readonly Dictionary<(nint Addon, nint Text, string Source), TooltipBaseline> tooltipBaselines = new();
+
+    // The game's layout of one tooltip text: its node, the root, the frames around it and the
+    // top-level rows below it, all classified in coordinates local to the root.
+    private sealed record TooltipBaseline(State Text, State Root, State[] Containers, State[] Below)
+    {
+        public bool Matches(HashSet<nint> nodes) => Containers.Concat(Below).Append(Text).Append(Root)
+            .All(state => nodes.Contains(state.Address) && ((AtkResNode*)state.Address)->NodeId == state.Id);
+
+        public static TooltipBaseline Capture(AtkResNode* root, AtkTextNode* text, HashSet<nint> nodes)
+        {
+            var textNode = (AtkResNode*)text;
+            var textTop = LocalY(textNode, root);
+            var textBottom = textTop + text->Height;
+            var containers = new List<State>(); var below = new List<State>();
+            foreach (var address in nodes)
+            {
+                var node = (AtkResNode*)address;
+                if (node == textNode || node == root || node->Height == 0 || !IsInside(node, root)) continue;
+                var top = LocalY(node, root);
+                // Frames around the description grow with it; rows that start below it move down.
+                // Moving a parent already moves its children, so only the outermost row moves.
+                if (top <= textTop + 1 && top + node->Height >= textBottom - 1) containers.Add(Snapshot(node));
+                else if (top >= textBottom - 1 && (node->ParentNode == root || LocalY(node->ParentNode, root) < textBottom - 1)) below.Add(Snapshot(node));
+            }
+            return new(Snapshot(textNode), Snapshot(root), containers.ToArray(), below.ToArray());
+        }
+    }
+
+    private static bool IsInside(AtkResNode* node, AtkResNode* root)
+    {
+        for (var i = 0; node != null && i < 64; i++, node = node->ParentNode)
+            if (node == root) return true;
+        return false;
+    }
+
+    // Position relative to the root, summed through the parents (unaffected by stale screen positions).
+    private static float LocalY(AtkResNode* node, AtkResNode* root)
+    {
+        var y = 0f;
+        for (var i = 0; node != null && node != root && i < 64; i++, node = node->ParentNode) y += node->Y;
+        return y;
+    }
+
+    private static float LocalX(AtkResNode* node, AtkResNode* root)
+    {
+        var x = 0f;
+        for (var i = 0; node != null && node != root && i < 64; i++, node = node->ParentNode) x += node->X;
+        return x;
     }
 
     // A fixed-width single-line cell (e.g. a shop column) cannot grow: a longer translation would
@@ -316,10 +369,6 @@ internal sealed unsafe class NativeTextLayout
     }
 
     private static string Rendered(byte[] bytes) => NativeTextContent.Extract(new ReadOnlySeStringSpan(bytes.AsSpan(0, bytes.Length - 1)));
-
-    // Moving a parent already moves its children; only the outermost node below the text moves.
-    private static bool IsTopLevelBelow(AtkResNode* node, float textBottom)
-        => node->ParentNode == null || node->ParentNode->ScreenY < textBottom - 1;
 
     private static bool Visible(AtkResNode* node)
     {
