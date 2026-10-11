@@ -143,7 +143,7 @@ public sealed partial class Plugin : IDalamudPlugin
         liveSources = new CompositeSourceResolver(hovered, prefetched);
         router = MakeRouter();
 #if !BRISA_READ_ONLY
-        prefetch = new TranslationPrefetch(DataManager, gameTexts, prefetched, () => router, file, PrefetchHasRoom, config);
+        prefetch = new TranslationPrefetch(DataManager, gameTexts, prefetched, file, () => prefetchTarget, config);
 #endif
         namePlates = new NamePlateTranslation(NamePlateGui, () => router, () => config.Enabled && config.NamePlates);
         capture.Injected = new InjectedTextMap();
@@ -205,13 +205,15 @@ public sealed partial class Plugin : IDalamudPlugin
     {
         foreach (var extra in fallbackQueues) extra.Dispose();
         fallbackQueues.Clear();
-        var chain = new List<FallbackQueues>();
         // Google answers fastest (needs no key), so on-screen text appears sooner; a failure moves on.
-        chain.Add(ProviderQueues(TranslationProvider.Google));
-        if (!string.IsNullOrWhiteSpace(openAIApiKey)) chain.Add(ProviderQueues(TranslationProvider.OpenAI));
-        if (!string.IsNullOrWhiteSpace(apiKey)) chain.Add(ProviderQueues(TranslationProvider.DeepL));
-        return chain;
+        var google = ProviderQueues(TranslationProvider.Google);
+        var openAI = string.IsNullOrWhiteSpace(openAIApiKey) ? null : ProviderQueues(TranslationProvider.OpenAI);
+        var deepL = string.IsNullOrWhiteSpace(apiKey) ? null : ProviderQueues(TranslationProvider.DeepL);
+        // Background prefetch prefers a provider with a key; the public Google endpoint is paced slowly.
+        prefetchTarget = openAI != null ? new(openAI.Japanese, false) : deepL != null ? new(deepL.Japanese, false) : new(google.Japanese, true);
+        return new[] { google, openAI, deepL }.OfType<FallbackQueues>().ToArray();
     }
+    private PrefetchTarget? prefetchTarget;
 
     private FallbackQueues ProviderQueues(TranslationProvider provider)
     {
@@ -246,12 +248,6 @@ public sealed partial class Plugin : IDalamudPlugin
         config.GoogleForMissing ? fallback : null,
 #endif
         liveSources);
-#if !BRISA_READ_ONLY
-    // Prefetch requests wait while the queue that would receive them is busy, so text on screen
-    // always goes first and the public Google endpoint is never flooded.
-    private bool PrefetchHasRoom() => queue.PendingCount < 32
-        && (fallback.Count == 0 || fallback[0].Japanese.PendingCount + fallback[0].Client.PendingCount < 12);
-#endif
     private void RetryErrors(bool resumePreparation = false)
     {
         shownBillingFailure = null; queue.RetryErrors(); clientQueue.RetryErrors();

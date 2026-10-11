@@ -18,6 +18,17 @@ internal sealed unsafe class GameTextCapture
     public void SetNpcNames(IEnumerable<string> names) => npcNames = names.Where(x => x.Length > 0).ToHashSet(StringComparer.Ordinal);
     public HudDiagnostics? Diagnostics { get; set; }
     public InjectedTextMap? Injected { get; set; }
+    // Recently written translations (bounded), keyed like the source index to ignore wrapping.
+    private readonly HashSet<string> own = new(StringComparer.Ordinal);
+    private readonly Queue<string> ownOrder = new();
+    private void RememberOwn(string rendered)
+    {
+        var key = SourceTextIndex.Key(rendered);
+        if (key.Length == 0 || !own.Add(key)) return;
+        ownOrder.Enqueue(key);
+        while (ownOrder.Count > 2048) own.Remove(ownOrder.Dequeue());
+    }
+    private bool IsOwn(string text) => own.Contains(SourceTextIndex.Key(text));
 
     private void KeepInjected(AtkUnitBase* addon, AtkUldManager* manager, AtkTextNode* textNode, nint address, ushort addonId, string addonName,
         string current, string source, ReadOnlySpan<byte> bytes, bool show, List<(float Y, float X, string Text)> lines)
@@ -211,6 +222,9 @@ internal sealed unsafe class GameTextCapture
                         $"registro={(prior == null ? "-" : HudDiagnostics.Quote(prior.Original) + "->" + HudDiagnostics.Quote(prior.Rendered))} " +
                         $"mantido={saved != null}");
                 if (!active || !nodeEnabled || !Visible(node) || !TextRules.HasReadableText(source)) continue;
+                // The game can copy a translated line into another box (or redraw it after its record was
+                // dropped); text this capture wrote itself is never sent for translation again.
+                if (saved == null && IsOwn(source)) continue;
                 if (!presentations.TryGetValue(address, out var presentation)) presentations[address] = presentation = new();
                 presentation.ObserveSource(source);
                 if (!lastSource.TryGetValue(address, out var previous) || previous != source)
@@ -267,6 +281,7 @@ internal sealed unsafe class GameTextCapture
                 }
                 textNode->SetText(layout.Bytes.AsSpan());
                 applied[address] = new(addonId, node->NodeId, original, source, translated, layout.Rendered, layout.Changes, loading);
+                if (!loading) RememberOwn(layout.Rendered);
                 if (diagnose) Diagnostics!.Record(address, "escrito", addonName, $"origem={HudDiagnostics.Quote(source)} texto={HudDiagnostics.Quote(layout.Rendered)}");
             }
             else if ((ushort)node->Type >= 1000)

@@ -9,12 +9,12 @@ public sealed record FallbackQueues(TranslationQueue Japanese, TranslationQueue 
 public sealed class TranslationRouter(TranslationQueue queue, TranslationFile file, SourceTextIndex index, bool japaneseSource, TranslationQueue? clientQueue = null, bool cachedOnly = false, bool prioritizeDialogue = false,
     IReadOnlyList<FallbackQueues>? fallback = null, ISourceTextResolver? live = null)
 {
-    // Game content (quest journal and objectives, dialogue, notices): text there often embeds item,
-    // place or character names through macros, so no static original matches it. Such client-language
-    // text may fall back. Tooltips are excluded: their unmatched lines are counters, prices and other
-    // plugins' rows, which would flood the providers (descriptions resolve live instead).
-    // HUD lists and other windows (party list, counters) never send it on their own either.
-    private static readonly HashSet<string> ContentScopes = new(StringComparer.Ordinal) { "Missões", "Falas", "Avisos" };
+    // Dialogue often embeds item, place or character names through macros, so no static original
+    // matches it; such a client-language sentence may fall back. Everything else stays offline unless a
+    // request failed: journal and objective texts are prefetched from their complete Japanese
+    // originals, and unmatched labels, names, counters and prices would only flood the providers.
+    private static bool DialogueSentence(string scope, string text)
+        => scope == "Falas" && text.Count(char.IsLetter) >= 12 && text.Count(char.IsWhiteSpace) >= 2;
     private readonly IReadOnlyList<FallbackQueues> chain = fallback ?? [];
     public bool CanRequest(string scope, bool priority = false) => !cachedOnly || chain.Count > 0 || (prioritizeDialogue && (scope == "Falas" || priority));
     public TranslationView Get(string displayed, bool request = true, string scope = "", bool priority = false)
@@ -28,7 +28,7 @@ public sealed class TranslationRouter(TranslationQueue queue, TranslationFile fi
         // including numbers and level-dependent clauses that the static index cannot match.
         if (live?.TryResolve(displayed, scope, out var japanese) == true || index.TryResolve(displayed, scope, out japanese))
             return Fetch(queue, x => x.Japanese, japanese, request, main, priority, true);
-        if (index.Ready && clientQueue != null) return Fetch(clientQueue, x => x.Client, displayed, request, main, priority, ContentScopes.Contains(scope));
+        if (index.Ready && clientQueue != null) return Fetch(clientQueue, x => x.Client, displayed, request, main, priority, DialogueSentence(scope, displayed));
         return new(null, index.Ready
             ? "Original japonês correspondente não localizado para este texto."
             : "Preparando o índice local de originais japoneses…", !index.Ready);
@@ -40,16 +40,17 @@ public sealed class TranslationRouter(TranslationQueue queue, TranslationFile fi
         if (result.Text != null || chain.Count == 0 || !request || result.Pending && result.Error == null) return result;
         // Outside game content, client-language text (counters, player names, chat-like strings)
         // is only sent after a real failure; TXT-only mode never forwards it on its own.
-        var failed = result.Error != null;
-        if (!failed && (main || !gameContent)) return result;
+        var primaryFailed = result.Error != null;
+        if (!primaryFailed && (main || !gameContent)) return result;
         foreach (var queues in chain)
         {
             var next = lane(queues);
-            // A failed queue is not asked again; a queue only skipped by TXT-only mode is.
-            if (failed && ReferenceEquals(next, primary)) continue;
+            // The main queue is skipped only when it failed itself; when TXT-only mode merely kept it
+            // idle, it still serves as the next provider after a failed one (e.g. Google blocked).
+            if (primaryFailed && ReferenceEquals(next, primary)) continue;
             var attempt = next.Get(text, true, priority);
             if (attempt.Text != null || attempt.Pending && attempt.Error == null) return attempt;
-            if (attempt.Error != null) { result = attempt; failed = true; }
+            if (attempt.Error != null) result = attempt;
         }
         return result;
     }

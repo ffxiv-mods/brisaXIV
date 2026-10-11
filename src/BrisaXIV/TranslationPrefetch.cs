@@ -15,16 +15,22 @@ namespace BrisaXIV;
 // evaluated as the game renders it, in the client language and in Japanese; the pair is registered
 // in PrefetchedSources and the complete Japanese original is translated in the background.
 // Runs on the framework thread, a few texts per frame, and only while the queue has room.
+// Background work goes to a provider with a key (OpenAI, then DeepL); on the public Google endpoint
+// it is paced slowly (Slow), leaving its rate to the text on screen.
+internal sealed record PrefetchTarget(TranslationQueue Queue, bool Slow);
+
 internal sealed unsafe class TranslationPrefetch(IDataManager data, GameTextEvaluator texts, PrefetchedSources sources,
-    Func<TranslationRouter> router, TranslationFile file, Func<bool> canQueue, Configuration config)
+    TranslationFile file, Func<PrefetchTarget?> target, Configuration config)
 {
     private sealed record Work(string Display, string Japanese, string Scope);
     private sealed record Snapshot(uint[] Quests, uint Job, uint Level, uint[] Items);
     private const long CheckInterval = 3000;
+    private const long SlowInterval = 5000;
     private string signature = "";
     private IEnumerator<Work>? pass;
     private Work? held;
     private long nextCheck;
+    private long nextSlowRequest;
 
     public void Tick()
     {
@@ -50,8 +56,12 @@ internal sealed unsafe class TranslationPrefetch(IDataManager data, GameTextEval
             sources.Add(work.Display, work.Japanese);
             if (file.TryGet(work.Japanese, out _) || file.TryGet(work.Display, out _)) continue;
             // Never flood the providers: wait for room and resume with this text on a later frame.
-            if (!canQueue()) { held = work; return; }
-            router().Get(work.Display, true, work.Scope);
+            // The public Google endpoint (no key) gets at most one background text every few seconds.
+            var destination = target();
+            if (destination == null || destination.Queue.PendingCount >= 8 || destination.Slow && Environment.TickCount64 < nextSlowRequest)
+            { held = work; return; }
+            destination.Queue.Get(work.Japanese, true);
+            if (destination.Slow) nextSlowRequest = Environment.TickCount64 + SlowInterval;
         }
     }
 
