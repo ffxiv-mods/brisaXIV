@@ -32,6 +32,7 @@ internal sealed unsafe class GameTextCapture
           "Config", "ConfigSystem", "ConfigCharacter", "ConfigChara", "ConfigKeybind", "SystemMenu", "MainCommand",
           "Shop", "ShopExchangeItem", "ShopExchangeCurrency", "RetainerList", "Achievement", "RecommendList",
           "HowTo", "Guide", "QuestRedo", "Social", "Buddy", "MountNote", "MinionNote", "FishGuide", "AdventureNoteBook" };
+    private const uint ForeignNodeIds = 30000;
     private static bool Tooltip(string name) => name is "ActionDetail" or "ItemDetail";
     private static bool Excluded(string name) => name.Contains("Chat", StringComparison.OrdinalIgnoreCase)
         || name.Contains("NamePlate", StringComparison.OrdinalIgnoreCase)
@@ -120,7 +121,9 @@ internal sealed unsafe class GameTextCapture
             var node = manager->NodeList[i];
             if (node == null || !visited.Add((nint)node)) continue;
             var address = (nint)node;
-            if (node->Type == NodeType.Text)
+            // Nodes created by other plugins (e.g. PriceInsight's market rows, id 32612) carry their
+            // owner's text and layout; the game's own ULD ids stay far below this range.
+            if (node->Type == NodeType.Text && node->NodeId < ForeignNodeIds)
             {
                 live.Add(address);
                 var textNode = (AtkTextNode*)node;

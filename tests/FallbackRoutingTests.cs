@@ -111,6 +111,17 @@ internal static class FallbackRoutingTests
                 "A main provider failure falls back to Google and saves the result");
         }
 
+        // A redirect to Google's "unusual traffic" page pauses every translator sharing the cadence.
+        var cadence = new GoogleCadence();
+        using (var blocked = new Translator(new(TranslationProvider.Google, "", false, "", "", "EN", false),
+            new Handler(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.Found))), googleCadence: cadence))
+        {
+            var error = "";
+            try { await blocked.TranslateAsync(["Speak with Ware Wailer."], CancellationToken.None); }
+            catch (TranslationException ex) { error = ex.Message; check(ex.RetryAfter == GoogleCadence.BlockPause, "A Google block schedules the retry after the block pause"); }
+            check(error.Contains("bloqueou") && cadence.Wait > 60_000, "A Google redirect is treated as a temporary block that pauses every queue sharing the cadence");
+        }
+
         // A plugin update brings new published entries without replacing the player's corrections.
         var personalPath = Path.Combine(scratch, "personal.txt");
         var personal = new TranslationFile(personalPath); personal.Store("既存", "Correção pessoal");

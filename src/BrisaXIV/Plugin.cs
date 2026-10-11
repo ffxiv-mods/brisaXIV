@@ -50,6 +50,7 @@ public sealed partial class Plugin : IDalamudPlugin
 #if !BRISA_READ_ONLY
     private string openAIApiKey = "";
     private readonly OpenAIRateLimiter openAIRateLimiter = new();
+    private readonly GoogleCadence googleCadence = new();
     private readonly object diagnosticGate = new();
 #endif
     private string? uiError;
@@ -119,6 +120,10 @@ public sealed partial class Plugin : IDalamudPlugin
         queue = MakeQueue();
         clientQueue = MakeQueue(false);
 #if !BRISA_READ_ONLY
+        // 0.0.5 sent every unmatched tooltip line (counters, prices) to Google from the client
+        // language; that retry list is discarded in favor of the narrower one used now.
+        try { File.Delete(Path.Combine(root, "pendencias-google-" + ClientLanguageCode + ".json")); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
         fallback = MakeFallback();
 #endif
         originals = new JapaneseSourceIndex(DataManager.GameData.DataPath.FullName, (Lumina.Data.Language)((int)ClientState.ClientLanguage + 1), root);
@@ -146,7 +151,7 @@ public sealed partial class Plugin : IDalamudPlugin
         concurrency.SetLimit(parallel);
         return new(file, new Translator(new(config.Provider, apiKey, config.DeepLPro, config.OllamaUrl, config.OllamaModel,
             japanese ? "JA" : ClientLanguageCode, config.GoogleFallback, openAIApiKey, config.OpenAIModel,
-            config.OpenAIRequestsPerMinute, config.OpenAITokensPerMinute), openAIRateLimiter: openAIRateLimiter, openAIDiagnostic: OpenAIDiagnostic, aiUsage: usageLedger.Record),
+            config.OpenAIRequestsPerMinute, config.OpenAITokensPerMinute), openAIRateLimiter: openAIRateLimiter, openAIDiagnostic: OpenAIDiagnostic, aiUsage: usageLedger.Record, googleCadence: googleCadence),
             capacity: Math.Max(128, parallel * 40), progress: progress, parallelism: parallel,
             concurrency: config.Provider == TranslationProvider.OpenAI ? concurrency : null,
             retryPath: Path.Combine(Path.GetDirectoryName(file.Path)!, japanese ? "pendencias-ja.json" : "pendencias-cliente-" + ClientLanguageCode + ".json"),
@@ -156,9 +161,9 @@ public sealed partial class Plugin : IDalamudPlugin
     }
 #if !BRISA_READ_ONLY
     private TranslationQueue MakeGoogleQueue(bool japanese) => new(file,
-        new Translator(new(TranslationProvider.Google, "", false, "", "", japanese ? "JA" : ClientLanguageCode, false)),
+        new Translator(new(TranslationProvider.Google, "", false, "", "", japanese ? "JA" : ClientLanguageCode, false), googleCadence: googleCadence),
         progress: progress,
-        retryPath: Path.Combine(Path.GetDirectoryName(file.Path)!, japanese ? "pendencias-google-ja.json" : "pendencias-google-" + ClientLanguageCode + ".json"),
+        retryPath: Path.Combine(Path.GetDirectoryName(file.Path)!, japanese ? "pendencias-google-ja.json" : "pendencias-google-cliente-" + ClientLanguageCode + ".json"),
         stored: journal.Append);
     private FallbackQueues MakeFallback() => new(MakeGoogleQueue(true), MakeGoogleQueue(false));
 #endif
