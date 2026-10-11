@@ -186,7 +186,7 @@ File.Delete(recoveryPath);
 Check(new TranslationFile(recoveryPath).TryGet("回復", out var recovered) && recovered == "Recuperação", "Deleted TXT is automatically restored from its local recovery copy");
 
 var deepLAttempts = 0; var googleAttempts = 0;
-using (var fallback = new Translator(new(TranslationProvider.DeepL, secret, false, "", ""), new FakeHandler(async request =>
+using (var fallback = new Translator(new(TranslationProvider.DeepL, secret, false, "", "", GoogleDictionaryEndpoint: false), new FakeHandler(async request =>
 {
     if (request.RequestUri!.Host == "api-free.deepl.com") { deepLAttempts++; return new((HttpStatusCode)456); }
     googleAttempts++;
@@ -199,7 +199,7 @@ using (var fallback = new Translator(new(TranslationProvider.DeepL, secret, fals
     Check(deepLAttempts == 1 && googleAttempts == 2 && fallback.UsingGoogleFallback, "Quota exhaustion switches automatically to Google and prevents repeated DeepL quota calls");
 }
 var partialPath = Path.Combine(scratch, "partial-google.txt"); var partialFile = new TranslationFile(partialPath); var partialCalls = 0;
-using (var partialQueue = new TranslationQueue(partialFile, new Translator(new(TranslationProvider.Google, "", false, "", ""), new FakeHandler(_ => Task.FromResult(++partialCalls == 1
+using (var partialQueue = new TranslationQueue(partialFile, new Translator(new(TranslationProvider.Google, "", false, "", "", GoogleDictionaryEndpoint: false), new FakeHandler(_ => Task.FromResult(++partialCalls == 1
     ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("[[[\"Primeira tradução\",\"original\"]]]") }
     : new HttpResponseMessage((HttpStatusCode)429))))))
 {
@@ -266,7 +266,7 @@ var googlePriorityFile = new TranslationFile(Path.Combine(scratch, "google-prior
 var googlePriorityRequests = new System.Collections.Concurrent.ConcurrentQueue<string>();
 var googleFirstStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 var googleFirstFinish = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-using (var googlePriorityQueue = new TranslationQueue(googlePriorityFile, new Translator(new(TranslationProvider.Google, "", false, "", ""), new FakeHandler(async request =>
+using (var googlePriorityQueue = new TranslationQueue(googlePriorityFile, new Translator(new(TranslationProvider.Google, "", false, "", "", GoogleDictionaryEndpoint: false), new FakeHandler(async request =>
 {
     var form = await request.Content!.ReadAsStringAsync();
     var text = Uri.UnescapeDataString(form.Split('&').First(field => field.StartsWith("q="))[2..].Replace('+', ' '));
@@ -288,7 +288,7 @@ var longPriorityRequests = new System.Collections.Concurrent.ConcurrentQueue<str
 var longLastFragmentStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 var longLastFragmentFinish = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 var longSource = new string('あ', 4100);
-using (var longPriorityQueue = new TranslationQueue(longPriorityFile, new Translator(new(TranslationProvider.Google, "", false, "", ""), new FakeHandler(async request =>
+using (var longPriorityQueue = new TranslationQueue(longPriorityFile, new Translator(new(TranslationProvider.Google, "", false, "", "", GoogleDictionaryEndpoint: false), new FakeHandler(async request =>
 {
     var form = await request.Content!.ReadAsStringAsync();
     var text = Uri.UnescapeDataString(form.Split('&').First(field => field.StartsWith("q="))[2..].Replace('+', ' '));
