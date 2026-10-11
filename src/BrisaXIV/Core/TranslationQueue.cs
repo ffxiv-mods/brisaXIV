@@ -41,6 +41,8 @@ public sealed class TranslationQueue : IDisposable
     private readonly CancellationTokenSource stop = new();
     private readonly Task worker;
     private readonly int capacity;
+    // Notified once for each translation this queue adds to the TXT.
+    private readonly Action<string, string>? stored;
     private volatile string? pausedReason;
     private volatile string? billingFailureCode;
     private int disposed;
@@ -65,9 +67,9 @@ public sealed class TranslationQueue : IDisposable
 
     public TranslationQueue(TranslationFile file, Translator translator, int capacity = 128,
         TranslationProgress? progress = null, int parallelism = 1, TranslationConcurrency? concurrency = null,
-        string? retryPath = null, TranslationRetryPolicy? retryPolicy = null)
+        string? retryPath = null, TranslationRetryPolicy? retryPolicy = null, Action<string, string>? stored = null)
     {
-        this.file = file; this.translator = translator; this.capacity = capacity;
+        this.file = file; this.translator = translator; this.capacity = capacity; this.stored = stored;
         Progress = progress ?? new TranslationProgress(); this.concurrency = concurrency;
         this.retryPolicy = retryPolicy ?? new TranslationRetryPolicy(); retryJournal = new(retryPath);
         foreach (var item in retryJournal.Snapshot())
@@ -282,6 +284,7 @@ public sealed class TranslationQueue : IDisposable
                             if (!file.TryGet(missing[i].Text, out _)) throw new TranslationException("Não foi possível gravar o TXT. Tradução pausada para evitar consumir cota sem salvar.", true);
                             file.TryGet(missing[i].Text, out var written);
                             Progress.Saved(missing[i].ProgressId, written, added);
+                            if (added) stored?.Invoke(missing[i].Text, written);
                             retryJournal.Remove(missing[i].Text);
                         }, YieldOrPause,
                         activity => requestId = Progress.Report(ids, activity, requestId)).ConfigureAwait(false);

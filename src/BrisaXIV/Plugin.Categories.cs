@@ -8,7 +8,7 @@ public sealed partial class Plugin
     {
         config.Dialogue = config.Subtitles = config.WindowTitles = config.Quests = config.Items = config.Actions
             = config.Menus = config.Confirmations = config.Notices = config.OtherWindows = enabled;
-        config.CharacterNames = enabled;
+        config.CharacterNames = config.NamePlates = enabled;
         config.Journal = enabled;
         config.Locations = config.Crafting = config.Collections = enabled;
         foreach (var category in new[] { "Missões", "Itens", "Habilidades", "Menus", "Confirmações", "Outras janelas", "Locais e viagens", "Receitas e fabricação", "Conquistas e coleções" })
@@ -57,7 +57,9 @@ public sealed partial class Plugin
         EndCard();
         BeginCard("NamesAndCollections"); ImGui.TextUnformatted("Nomes, locais e atividades");
         changed |= ToggleRow("Nomes de personagens (NPCs)", ref config.CharacterNames,
-            "Permite usar traduções disponíveis para nomes de NPCs nos campos identificados de conversa e nas janelas habilitadas. Desligado inicialmente para preservar nomes. Não altera nomes de jogadores, chat ou placas flutuantes sobre personagens. Não cria traduções ausentes do TXT.");
+            "Traduz nomes de NPCs e inimigos nos campos identificados de conversa e nas janelas habilitadas, como alvo e lista de inimigos. Desligado inicialmente para preservar nomes. Não altera nomes de jogadores, chat ou o nome do seu chocobo.");
+        changed |= ToggleRow("Nomes sobre a cabeça (placas)", ref config.NamePlates,
+            "Traduz os nomes flutuantes de NPCs, inimigos, mascotes e objetos do cenário. Jogadores, retentores e o seu chocobo permanecem com o nome original.");
         var locations = config.Locations ?? config.Menus;
         if (ToggleRow("Locais e viagens", ref locations,
             "Controla os anúncios de área (_AreaText) e a janela de teleporte (Teleport), incluindo destinos e informações. Inicialmente cada tela segue sua opção anterior de avisos ou menus; ao escolher aqui, ambas passam a seguir esta opção."))
@@ -97,6 +99,6 @@ public sealed partial class Plugin
             ImGui.PopID();
         }
         EndCard();
-        ImGui.TextWrapped("Chat de jogadores, placas flutuantes e campos de entrada permanecem preservados. Nomes de NPCs seguem sua opção específica. Textos já salvos usam o TXT; escolher categorias não reenvia suas traduções para a API.");
+        ImGui.TextWrapped("Chat de jogadores e campos de entrada permanecem preservados. Nomes de NPCs e placas flutuantes seguem suas opções específicas. Textos já salvos usam o TXT; escolher categorias não reenvia suas traduções para a API.");
     }
 }

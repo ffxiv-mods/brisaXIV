@@ -6,13 +6,14 @@ namespace BrisaXIV;
 [Serializable]
 public sealed class Configuration : IPluginConfiguration
 {
-    public int Version { get; set; } = 5;
+    public int Version { get; set; } = 6;
     public bool Enabled = true;
     public bool NativeHud = true;
     public bool Dialogue = true;
     public bool Subtitles = true;
     public bool WindowTitles = true;
     public bool CharacterNames = false;
+    public bool NamePlates = false;
     public bool? Locations;
     public bool? Crafting;
     public bool? Collections;
@@ -31,6 +32,7 @@ public sealed class Configuration : IPluginConfiguration
     public bool Notices = true;
     public bool TranslateUnmatched = true;
     public bool GoogleFallback = true;
+    public bool GoogleForMissing = true;
     public bool BackgroundPreparation = true;
     public bool CachedOnly = true;
     public bool PrioritizeDialogue = true;

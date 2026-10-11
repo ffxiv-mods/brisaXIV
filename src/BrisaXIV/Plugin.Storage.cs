@@ -18,4 +18,32 @@ public sealed partial class Plugin
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         { uiError = "Não foi possível importar o TXT inicial. Confira as permissões da pasta de dados do plugin."; }
     }
+
+    // Each update ships the newest published TXT. Only originals the player does not have yet are
+    // added, in the background and once per package, so personal corrections always survive.
+    private void MergePackageTranslations(string packageRoot, string dataRoot)
+    {
+        var seed = Path.Combine(packageRoot, "traducoes.txt");
+        var marker = Path.Combine(dataRoot, "pacote-importado.txt");
+        try
+        {
+            if (!File.Exists(seed)) return;
+            var info = new FileInfo(seed);
+            var signature = info.Length + " " + info.LastWriteTimeUtc.Ticks;
+            if (File.Exists(marker) && File.ReadAllText(marker).Trim() == signature) return;
+            _ = Task.Run(() =>
+            {
+                try
+                {
+                    var added = file.ImportMissing(seed);
+                    File.WriteAllText(marker, signature);
+                    Log.Information("BrisaXIV: {Count} traduções novas do pacote incorporadas ao TXT.", added);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                { Log.Warning("BrisaXIV: não foi possível incorporar as traduções novas do pacote ({ErrorType}).", ex.GetType().Name); }
+            });
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        { Log.Warning("BrisaXIV: não foi possível conferir o TXT do pacote ({ErrorType}).", ex.GetType().Name); }
+    }
 }

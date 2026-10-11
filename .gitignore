@@ -59,3 +59,7 @@ work/
 .vscode/
 .idea/
 .claude/settings.local.json
+
+# Traduções novas criadas durante o jogo (incorporar com Incorporar-Traducoes-Novas.ps1)
+plugin/traducoes-novas.txt
+plugin/traducoes-novas.incorporado-*.txt

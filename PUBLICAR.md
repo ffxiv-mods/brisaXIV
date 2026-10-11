@@ -18,7 +18,7 @@ https://github.com/ffxiv-mods/brisaXIV/releases/latest/download/repo.json
 
 1. No jogo, abra `/xlsettings` → **Experimental** → **Custom Plugin Repositories**, cole a URL, marque a caixa de ativação e salve.
 2. Abra `/xlplugins`, busque **Brisa XIV** e instale.
-3. Abra `/brisa`. Na instalação normal, o TXT ativo fica em `%APPDATA%\XIVLauncher\pluginConfigs\BrisaXIV\traducoes.txt`; a página **Arquivo TXT** mostra o caminho exato. A primeira instalação importa o TXT do pacote. Atualizações seguintes preservam o TXT existente.
+3. Abra `/brisa`. Na instalação normal, o TXT ativo fica em `%APPDATA%\XIVLauncher\pluginConfigs\BrisaXIV\traducoes.txt`; a página **Arquivo TXT** mostra o caminho exato. A primeira instalação importa o TXT do pacote. Atualizações seguintes acrescentam somente as traduções novas do pacote e preservam as correções existentes.
 
 Se estiver usando a DLL de desenvolvimento (`Instalar-No-Dalamud.ps1`), desative essa instância antes de instalar pelo repositório. As duas têm o mesmo `InternalName`.
 

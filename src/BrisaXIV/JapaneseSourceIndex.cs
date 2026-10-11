@@ -53,7 +53,7 @@ internal sealed class JapaneseSourceIndex : IDisposable
             var versionFile = Path.Combine(Directory.GetParent(GamePath)!.FullName, "ffxivgame.ver");
             var version = File.Exists(versionFile) ? File.ReadAllText(versionFile).Trim() : "unknown";
             var fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(GamePath + version)));
-            var header = $"# BrisaXIV sources v3 {language} {fingerprint}";
+            var header = $"# BrisaXIV sources v4 {language} {fingerprint}";
             if (TryLoad(header) && Catalog.TryLoad(CatalogPath, fingerprint, stop.Token)) { Texts.Ready = true; return; }
             using var game = new GameData(GamePath, new LuminaOptions { DefaultExcelLanguage = language, LoadMultithreaded = false });
             LoadExpansions(game);
@@ -111,6 +111,7 @@ internal sealed class JapaneseSourceIndex : IDisposable
         {
             var source = sourceRaw?.Language == language ? game.GetExcelSheet<RawRow>(language, name) : null;
             var japanese = game.GetExcelSheet<RawRow>(Language.Japanese, name)!;
+            var names = IsNameSheet(name);
             foreach (var row in japanese)
             {
                 stop.Token.ThrowIfCancellationRequested();
@@ -121,11 +122,18 @@ internal sealed class JapaneseSourceIndex : IDisposable
                     Catalog.Add(ja, rowExpansion, name);
                     if (source != null && source.TryGetRow(row.RowId, out var display)
                         && column < sourceRaw!.Columns.Count && sourceRaw.Columns[column].Type == ExcelColumnDataType.String)
-                        Texts.Add(display.ReadStringColumn(column).ExtractText(), ja, scope);
+                    {
+                        var shown = display.ReadStringColumn(column).ExtractText();
+                        Texts.Add(shown, ja, scope);
+                        if (names && column == columns[0]) Texts.AddName(shown, ja);
+                    }
                 }
             }
         }
     }
+
+    // The first string column of these sheets is the singular name shown in the HUD.
+    private static bool IsNameSheet(string sheet) => sheet is "BNpcName" or "ENpcResident" or "EObjName";
 
     private void LoadExpansions(GameData game)
     {

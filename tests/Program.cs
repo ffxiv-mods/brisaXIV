@@ -117,6 +117,7 @@ await OpenAITranslationTests.Run(Check, scratch);
 await TranslationProgressTests.Run(Check, scratch);
 await TranslationRetryTests.Run(Check, scratch);
 await AIUsageTests.Run(Check, scratch);
+await FallbackRoutingTests.Run(Check, scratch);
 
 var calls = 0;
 var translated = new Dictionary<string, string> { ["こんにちは。"] = "Olá.", ["ありがとう。"] = "Obrigado." };

@@ -170,7 +170,7 @@ internal sealed unsafe class GameTextCapture
                     lastSource[address] = source; since[address] = Environment.TickCount64;
                 }
                 var unchanged = (long)(Environment.TickCount64 - since[address]);
-                var result = characterName ? router.Get(source, false, category)
+                var result = characterName ? router.Get(source, true, SourceTextIndex.NamesScope)
                     : HudTranslation.Get(router, source, category, priority, unchanged);
                 if (unchanged >= 350 || result.Text != null) lines.Add((node->ScreenY, node->ScreenX, source));
                 if (!native) continue;
