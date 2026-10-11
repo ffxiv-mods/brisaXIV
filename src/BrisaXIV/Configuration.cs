@@ -6,7 +6,7 @@ namespace BrisaXIV;
 [Serializable]
 public sealed class Configuration : IPluginConfiguration
 {
-    public int Version { get; set; } = 7;
+    public int Version { get; set; } = 8;
     public bool Enabled = true;
     public bool NativeHud = true;
     public bool Dialogue = true;
@@ -37,7 +37,8 @@ public sealed class Configuration : IPluginConfiguration
     public bool GoogleForMissing = true;
     public bool Prefetch = true;
     public bool BackgroundPreparation = true;
-    public bool CachedOnly = true;
+    // Obsolete: the online build always translates what the TXT lacks; kept so old configs load.
+    public bool CachedOnly = false;
     public bool PrioritizeDialogue = true;
     public bool WaitForDialogue = true;
     public int DialogueWaitSeconds = 10;

@@ -65,8 +65,33 @@ public sealed class SourceTextIndex : ISourceTextResolver
         // The surface scope wins over the global key, so a name from the NPC sheets is used
         // even when the same English text is ambiguous across the whole game.
         var entry = Find(EntryKey(display, scope)) ?? Find(EntryKey(display, ""));
+        // HUD text can carry game icons (e.g. the HQ mark) that the sheet text does not have.
+        if (entry?.Japanese == null && HasIcons(display))
+        {
+            var plain = WithoutIcons(display);
+            entry = Find(EntryKey(plain, scope)) ?? Find(EntryKey(plain, ""));
+        }
         japanese = entry?.Japanese ?? "";
         return japanese.Length > 0;
+    }
+
+    // Game icons are private-use glyphs drawn inside the text (HQ mark, quest and link markers).
+    public static bool HasIcons(string text) => text.Any(IsIcon);
+
+    public static string WithoutIcons(string text) => HasIcons(text) ? new string(text.Where(c => !IsIcon(c)).ToArray()) : text;
+
+    private static bool IsIcon(char c) => c is >= '' and <= '';
+
+    // The HUD shortens long lines with an ellipsis; returns the key of the visible part, if any.
+    public static bool TryTruncatedKey(string text, out string prefixKey)
+    {
+        var key = Key(WithoutIcons(text));
+        prefixKey = "";
+        // NFKC turns the single ellipsis character into three dots.
+        if (!key.EndsWith("...", StringComparison.Ordinal)) return false;
+        prefixKey = key[..^3].TrimEnd();
+        // Too short a prefix would match unrelated texts.
+        return prefixKey.Count(char.IsLetter) >= 8;
     }
 
     private Entry? Find(string key) => entries.TryGetValue(key, out var exact) ? exact

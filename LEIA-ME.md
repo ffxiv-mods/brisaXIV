@@ -62,9 +62,9 @@ Chave inválida, falta de saldo, modelo indisponível e impossibilidade de grava
 
 ## Testar a fala de um NPC agora
 
-No `/brisa`, a opção **Priorizar falas e escolhas do NPC na HUD, mesmo em modo TXT** vem ativada. Converse com um NPC e mantenha a caixa aberta até chegar o português.
+No `/brisa`, a opção **Priorizar falas e escolhas do NPC** vem ativada. Converse com um NPC e mantenha a caixa aberta até chegar o português.
 
-Se a fala já existe no arquivo, a HUD aplica a tradução antes de desenhar a caixa, sem a espera fixa de 350 ms. A correspondência japonesa precisa estar disponível no índice local. Se ainda faltar, o plugin consulta o original japonês e coloca a fala à frente do trabalho geral, mesmo com **HUD lê somente o TXT** marcada. Escolhas de conversa e caixas de aceitar ou concluir uma missão também podem entrar com prioridade. Somente textos novos aguardam aproximadamente 350 ms de estabilidade, para não traduzir cada letra da animação.
+Se a fala já existe no arquivo, a HUD aplica a tradução antes de desenhar a caixa, sem a espera fixa de 350 ms. A correspondência japonesa precisa estar disponível no índice local. Se ainda faltar, o plugin consulta o original japonês e coloca a fala à frente do trabalho geral. Escolhas de conversa e caixas de aceitar ou concluir uma missão também podem entrar com prioridade. Somente textos novos aguardam aproximadamente 350 ms de estabilidade, para não traduzir cada letra da animação.
 
 **Mostrar Traduzindo… na caixa enquanto aguarda uma fala nova** vem ativada. A caixa principal, os balões pequenos e as falas de batalha permanecem visíveis e mostram **Traduzindo…** no próprio campo de texto, por até **10 segundos**, sem alterar a transparência ou esconder a janela inteira. O nome do NPC continua visível. Quando a tradução chega, o português substitui o indicador automaticamente, sem outro clique. A espera máxima pode ser ajustada entre 1 e 30 segundos. Se houver erro ou a espera terminar, o original aparece e o português entra quando estiver disponível. Textos salvos não usam essa espera. A espera pertence a cada campo, para que dois balões simultâneos não interfiram um no outro.
 
@@ -102,7 +102,7 @@ O padrão envia japonês ao DeepL Free, com destino PT-BR. Se a API responder **
 
 A alternativa Google usa endpoints web sem contrato de estabilidade; podem falhar, mudar ou limitar requisições. Primeiro é usado o endpoint da extensão de dicionário do Chrome (o mesmo do Echoglossian), que identifica a extensão com a chave pública dela e envia o texto na URL; se ele falhar ou bloquear, o mesmo texto vai ao `translate_a/single` (gtx), por POST. O ritmo é de uma requisição por segundo. Se todos os endpoints bloquearem (302/403/429), as filas aguardam 20 segundos, dobrando a cada bloqueio seguido até cinco minutos; o primeiro sucesso volta a 20 segundos. Os textos pendentes têm nova tentativa automática e o progresso permanece salvo. A chave DeepL ou OpenAI nunca é enviada ao Google. Ollama local continua opcional.
 
-A preparação em segundo plano e as falas priorizadas solicitam traduções por padrão. A opção **HUD lê somente o TXT** mantém as demais janelas independentes da rede; desmarque também a prioridade de falas se quiser que toda a HUD apenas leia o arquivo. Se você desmarcar o modo TXT durante a preparação, outros textos novos na tela também poderão ser traduzidos. Ao concluir o catálogo, o modo de leitura é ativado e a prioridade não solicita novas traduções.
+O TXT funciona como cache: o que já está nele aparece na hora, e o que falta é traduzido assim que aparece na tela, a partir do original japonês quando ele existe ou do idioma do cliente quando não existe. Isso vale também depois de concluir o catálogo. A versão somente leitura continua usando apenas o TXT.
 
 ## OpenAI — GPT-6 Luna
 

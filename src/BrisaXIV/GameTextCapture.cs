@@ -28,7 +28,17 @@ internal sealed unsafe class GameTextCapture
         ownOrder.Enqueue(key);
         while (ownOrder.Count > 2048) own.Remove(ownOrder.Dequeue());
     }
-    private bool IsOwn(string text) => own.Contains(SourceTextIndex.Key(text));
+    private bool IsOwn(string text)
+    {
+        if (own.Contains(SourceTextIndex.Key(text))) return true;
+        // The HUD can redraw a translated line with an icon added or cut with an ellipsis; that
+        // variant is still this capture's own text and must not be sent as a new source.
+        if (SourceTextIndex.HasIcons(text) && own.Contains(SourceTextIndex.Key(SourceTextIndex.WithoutIcons(text)))) return true;
+        if (!SourceTextIndex.TryTruncatedKey(text, out var prefix)) return false;
+        foreach (var key in own)
+            if (key.StartsWith(prefix, StringComparison.Ordinal)) return true;
+        return false;
+    }
 
     private void KeepInjected(AtkUnitBase* addon, AtkUldManager* manager, AtkTextNode* textNode, nint address, ushort addonId, string addonName,
         string current, string source, ReadOnlySpan<byte> bytes, bool show, List<(float Y, float X, string Text)> lines)
