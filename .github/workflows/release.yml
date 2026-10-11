@@ -1,0 +1,79 @@
+# Publica uma release instalável pelo Dalamud quando o git flow cria a tag releaseV<versão>
+# (git flow release finish releaseV0.0.1 + git push origin master develop --follow-tags).
+# A versão vem só do nome da tag. Tags que não apontam para um commit da master são recusadas,
+# então nada criado a partir da develop chega ao Dalamud, que lê o repo.json da última release:
+# https://github.com/<repo>/releases/latest/download/repo.json
+name: Release
+
+on:
+  push:
+    tags: ['releaseV*']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+          fetch-depth: 0
+
+      - name: Validar tag
+        id: version
+        shell: pwsh
+        run: |
+          if ($env:TAG -notmatch '^releaseV(\d+\.\d+\.\d+)$') { throw "Tag '$env:TAG' fora do padrão releaseV<maior>.<menor>.<correção> (ex.: releaseV0.0.1)." }
+          $version = $Matches[1]
+          git merge-base --is-ancestor $env:GITHUB_SHA origin/master
+          if ($LASTEXITCODE -ne 0) { throw "A tag $env:TAG não aponta para um commit da master. Releases só saem da master." }
+          gh release view $env:TAG *> $null
+          $exists = ($LASTEXITCODE -eq 0).ToString().ToLower()
+          if ($exists -eq 'true') { Write-Output "A release $env:TAG já existe; nada a publicar." }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "exists=$exists" >> $env:GITHUB_OUTPUT
+          exit 0
+
+      - uses: actions/setup-dotnet@v4
+        if: steps.version.outputs.exists == 'false'
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Baixar referências do Dalamud
+        if: steps.version.outputs.exists == 'false'
+        shell: pwsh
+        run: |
+          $dalamud = Join-Path $env:APPDATA 'XIVLauncher\addon\Hooks\dev'
+          New-Item -ItemType Directory -Path $dalamud -Force | Out-Null
+          $zip = Join-Path $env:RUNNER_TEMP 'dalamud.zip'
+          Invoke-WebRequest -Uri 'https://goatcorp.github.io/dalamud-distrib/latest.zip' -OutFile $zip
+          Expand-Archive -LiteralPath $zip -DestinationPath $dalamud -Force
+
+      - name: Compilar e testar
+        if: steps.version.outputs.exists == 'false'
+        shell: pwsh
+        run: ./Compilar.ps1 -Version '${{ steps.version.outputs.version }}' -ScratchDirectory (Join-Path $env:RUNNER_TEMP 'BrisaXIV-build')
+
+      - name: Empacotar
+        if: steps.version.outputs.exists == 'false'
+        shell: pwsh
+        run: |
+          ./Empacotar-Release.ps1 -Repository '${{ github.repository }}' -OutputDirectory release
+          $built = (Get-Content release/repo.json -Raw | ConvertFrom-Json)[0].AssemblyVersion
+          if ($built -ne '${{ steps.version.outputs.version }}.0') { throw "A DLL saiu com a versão $built, diferente da tag $env:TAG." }
+
+      - name: Publicar release
+        if: steps.version.outputs.exists == 'false'
+        shell: pwsh
+        run: |
+          gh release create $env:TAG release/latest.zip release/repo.json --verify-tag --title "Brisa XIV $env:TAG" --generate-notes --latest
+          if ($LASTEXITCODE -ne 0) { throw 'Falha ao criar a release.' }

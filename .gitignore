@@ -1,0 +1,61 @@
+# ---------------------------------------------------------------
+# Segredos, chaves e credenciais
+# ---------------------------------------------------------------
+*.dpapi
+**/secrets*.json
+.env
+.env.*
+*.pfx
+*.p12
+*.key
+*.pem
+
+# ---------------------------------------------------------------
+# Dados privados gerados pelo plugin em plugin/
+# (custos, uso de tokens, logs, progresso, pendências, índices)
+# ---------------------------------------------------------------
+plugin/uso-ia*.jsonl
+plugin/custos-ia*.json
+plugin/custos-ia*.json.tmp
+plugin/custos-*.csv
+plugin/diagnostico-*.log
+plugin/conversao-final.log
+plugin/*.log
+plugin/progresso-*.json
+plugin/pendencias-*.json
+plugin/backup-preparador-*/
+plugin/seed-*.tmp.zip
+# Índices locais extraídos dos arquivos do jogo (recriados automaticamente)
+plugin/fontes-English-JA.jsonl
+plugin/originais-japoneses.jsonl
+# Cópia de segurança local do TXT (o TXT principal VAI para o Git via LFS)
+plugin/*.bak
+
+# ---------------------------------------------------------------
+# Saída de compilação (gerada por Compilar.ps1)
+# ---------------------------------------------------------------
+**/bin/
+**/obj/
+plugin/BrisaXIV.dll
+plugin/BrisaXIV.pdb
+plugin/BrisaXIV.deps.json
+plugin/BrisaXIV.json
+.build-final/
+
+# ---------------------------------------------------------------
+# Releases/exportações antigas e áreas de trabalho locais
+# ---------------------------------------------------------------
+publicacao/
+release/
+work/
+*.zip
+!data/traducoes-iniciais.zip*
+
+# ---------------------------------------------------------------
+# IDE / ferramentas
+# ---------------------------------------------------------------
+*.user
+**/.vs/
+.vscode/
+.idea/
+.claude/settings.local.json
