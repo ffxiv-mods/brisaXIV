@@ -1,5 +1,5 @@
-# Publica uma release instalável pelo Dalamud quando o git flow cria a tag releaseV<versão>
-# (git flow release finish releaseV0.0.1 + git push origin master develop --follow-tags).
+# Publica uma release instalável pelo Dalamud quando o git flow cria a tag ReleaseV<versão>
+# (git flow release finish ReleaseV0.0.1 + git push origin master develop --follow-tags).
 # A versão vem só do nome da tag. Tags que não apontam para um commit da master são recusadas,
 # então nada criado a partir da develop chega ao Dalamud, que lê o repo.json da última release:
 # https://github.com/<repo>/releases/latest/download/repo.json
@@ -7,7 +7,7 @@ name: Release
 
 on:
   push:
-    tags: ['releaseV*']
+    tags: ['ReleaseV*']
 
 permissions:
   contents: write
@@ -32,7 +32,7 @@ jobs:
         id: version
         shell: pwsh
         run: |
-          if ($env:TAG -notmatch '^releaseV(\d+\.\d+\.\d+)$') { throw "Tag '$env:TAG' fora do padrão releaseV<maior>.<menor>.<correção> (ex.: releaseV0.0.1)." }
+          if ($env:TAG -cnotmatch '^ReleaseV(\d+\.\d+\.\d+)$') { throw "Tag '$env:TAG' fora do padrão ReleaseV<maior>.<menor>.<correção> (ex.: ReleaseV0.0.1)." }
           $version = $Matches[1]
           git merge-base --is-ancestor $env:GITHUB_SHA origin/master
           if ($LASTEXITCODE -ne 0) { throw "A tag $env:TAG não aponta para um commit da master. Releases só saem da master." }
@@ -43,10 +43,12 @@ jobs:
           "exists=$exists" >> $env:GITHUB_OUTPUT
           exit 0
 
+      # O SDK vem do global.json: um SDK de outra versão maior precisaria baixar pacotes,
+      # e o NuGet.Config do projeto desativa todas as fontes.
       - uses: actions/setup-dotnet@v4
         if: steps.version.outputs.exists == 'false'
         with:
-          dotnet-version: '10.0.x'
+          global-json-file: global.json
 
       - name: Baixar referências do Dalamud
         if: steps.version.outputs.exists == 'false'
@@ -61,7 +63,20 @@ jobs:
       - name: Compilar e testar
         if: steps.version.outputs.exists == 'false'
         shell: pwsh
-        run: ./Compilar.ps1 -Version '${{ steps.version.outputs.version }}' -ScratchDirectory (Join-Path $env:RUNNER_TEMP 'BrisaXIV-build')
+        run: |
+          dotnet --info
+          $log = [Collections.Generic.List[string]]::new()
+          try {
+            ./Compilar.ps1 -Version '${{ steps.version.outputs.version }}' -ScratchDirectory (Join-Path $env:RUNNER_TEMP 'BrisaXIV-build') 2>&1 |
+              ForEach-Object { $line = "$_"; $log.Add($line); $line }
+          }
+          catch {
+            # Anotações ficam visíveis na API pública do GitHub mesmo sem login, ao contrário do log completo.
+            $log.Add("$_")
+            $tail = (($log | Where-Object { $_ -match 'error|erro|falh|FAIL|Exception' }) + ($log | Select-Object -Last 25) | Select-Object -Unique) -join "`n"
+            Write-Output ("::error title=Compilar e testar::" + $tail.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A'))
+            exit 1
+          }
 
       - name: Empacotar
         if: steps.version.outputs.exists == 'false'
