@@ -168,7 +168,7 @@ As traduções são aplicadas no texto nativo, com suporte aos marcadores comuns
 
 O plugin mede as linhas com a fonte do jogo, quebra palavras pela largura disponível e amplia a altura de caixas de fala identificadas quando necessário. O fundo cresce para cima, mantendo a borda inferior no lugar. A caixa principal Talk e os balões MiniTalk têm tratamentos próprios, pois seus fundos são diferentes. A geometria anterior é restaurada ao trocar a fala, desativar a HUD ou descarregar o plugin.
 
-Caixas de entrada, correio, chat e nomes sobre os personagens ficam fora da captura genérica. Não execute Echoglossian e Brisa modificando as mesmas caixas simultaneamente.
+Caixas de entrada, correio, chat e nomes sobre os personagens ficam fora da captura genérica. Não execute outro plugin de tradução modificando as mesmas caixas simultaneamente.
 
 Preparar todos os campos japoneses legíveis não garante substituir todo texto visível: correspondências ambíguas, expressões com valores dinâmicos, texto desenhado como imagem e elementos fora dos nós de texto podem continuar no idioma original. Nomes personalizados e mensagens de jogadores não existem previamente no catálogo. Contêineres desconhecidos e falas que excedam os limites de ampliação podem exigir o painel ampliado. A substituição genérica e a aparência do redimensionamento ainda precisam ser conferidas no jogo.
 
@@ -180,7 +180,7 @@ Para desativar, desmarque Brisa XIV em `/xlplugins`. Para remover o registro, re
 
 ## Referências
 
-[Echoglossian](https://github.com/lokinmodar/Echoglossian) foi consultado como referência de comportamento; seu código não foi incorporado. APIs: [Dalamud](https://dalamud.dev/), [Lumina](https://github.com/NotAdam/Lumina), [FFXIVClientStructs](https://github.com/aers/FFXIVClientStructs) e [DeepL](https://developers.deepl.com/docs/best-practices/error-handling). Este projeto não representa autorização da Square Enix para ferramentas de terceiros.
+APIs: [Dalamud](https://dalamud.dev/), [Lumina](https://github.com/NotAdam/Lumina), [FFXIVClientStructs](https://github.com/aers/FFXIVClientStructs) e [DeepL](https://developers.deepl.com/docs/best-practices/error-handling). Este projeto não representa autorização da Square Enix para ferramentas de terceiros.
 
 ## Escolher quais textos aparecem traduzidos
 

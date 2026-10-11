@@ -9,7 +9,7 @@ using Lumina.Excel.Sheets;
 
 namespace BrisaXIV;
 
-// Translates ahead of time what the player is about to read, like the Echoglossian plugin:
+// Translates ahead of time what the player is about to read:
 // the journal summaries, objectives and captions of accepted quests, the current job's action
 // descriptions and the descriptions of items in the inventory and on the hotbars. Each text is
 // evaluated as the game renders it, in the client language and in Japanese; the pair is registered
