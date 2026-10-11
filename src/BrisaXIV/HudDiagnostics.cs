@@ -3,7 +3,7 @@ using BrisaXIV.Core;
 
 namespace BrisaXIV;
 
-// Opt-in trace (/brisa diagnostico) of what the HUD capture reads and writes in the journal and action
+// Opt-in trace (/brisa diagnostico) of what the HUD capture reads and writes in the journal, action and item
 // tooltip windows. Only game text is recorded, one line per change of a text node's state, so a
 // reproduction stays small. Runs on the framework thread only.
 internal sealed class HudDiagnostics(string path)
@@ -14,7 +14,7 @@ internal sealed class HudDiagnostics(string path)
     public string Path { get; } = path;
     public bool Enabled { get; private set; }
 
-    public bool Watches(string addon) => Enabled && !full && (addon.StartsWith("Journal", StringComparison.Ordinal) || addon == "ActionDetail");
+    public bool Watches(string addon) => Enabled && !full && (addon.StartsWith("Journal", StringComparison.Ordinal) || addon is "ActionDetail" or "ItemDetail");
 
     public void Toggle()
     {

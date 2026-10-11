@@ -33,6 +33,15 @@ Check(NativeTextContent.TryReplace(new ReadOnlySeStringSpan(nativeStyled), "Por 
 Check(!NativeTextContent.TryReplace(new ReadOnlySeStringSpan(nativeIcon), "Português", out _)
     && !NativeTextContent.TryReplace(new ReadOnlySeStringSpan(nativeNewline), "Inválido\0texto", out _),
     "Unsupported native payloads and injected control bytes do not damage game text");
+var inlineColor = Encoding.UTF8.GetBytes("Grants ").Concat(colorOn).Concat(Encoding.UTF8.GetBytes("Astral Fire")).Concat(colorOff).Concat(Encoding.UTF8.GetBytes(".")).ToArray();
+var highlightedName = colorOn.Concat(Encoding.UTF8.GetBytes("Fogo Astral")).Concat(colorOff).ToArray();
+Check(NativeTextContent.TryReplace(new ReadOnlySeStringSpan(inlineColor), "Concede “Fogo Astral” ao usar 「Gelo」.", out var highlighted)
+    && NativeTextContent.Extract(new ReadOnlySeStringSpan(highlighted.AsSpan(0, highlighted.Length - 1))) == "Concede Fogo Astral ao usar Gelo."
+    && highlighted.AsSpan().IndexOf(highlightedName) > 0,
+    "An inline colored name keeps its color on the quoted names of the translation, without the quotes");
+Check(NativeTextContent.TryReplace(new ReadOnlySeStringSpan(nativeStyled), "Diga “olá”.", out var wrappedQuote)
+    && NativeTextContent.Extract(new ReadOnlySeStringSpan(wrappedQuote.AsSpan(0, wrappedQuote.Length - 1))) == "Diga “olá”.",
+    "Quotes stay when the original only colors the whole text, with no inline emphasis to move");
 var longDialogue = "Você também quer ouvir?\nTem uma garota que eu conheço que é super arrogante, e todo mundo estava tendo muito trabalho com ela, mas então veio um oráculo dizendo: Antes do sol se pôr, cite cinco qualidades positivas de um amigo.";
 var wrappedDialogue = TextBoxLayout.Wrap(longDialogue, 55, value => value.Length);
 Check(wrappedDialogue.Split('\n').All(line => line.Length <= 55)

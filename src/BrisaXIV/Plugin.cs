@@ -127,7 +127,7 @@ public sealed partial class Plugin : IDalamudPlugin
         router = MakeRouter();
         namePlates = new NamePlateTranslation(NamePlateGui, () => router, () => config.Enabled && config.NamePlates);
         quests = new QuestCatalog(DataManager);
-        Commands.AddHandler("/brisa", new CommandInfo(OnCommand) { HelpMessage = "Progresso: /brisa progresso. Custos da IA: /brisa custos. Configuração: /brisa. Leitura: /brisa ler. Todas as telas: /brisa tudo. Recarregar TXT: /brisa recarregar. Diagnóstico do diário e habilidades: /brisa diagnostico." });
+        Commands.AddHandler("/brisa", new CommandInfo(OnCommand) { HelpMessage = "Progresso: /brisa progresso. Custos da IA: /brisa custos. Configuração: /brisa. Leitura: /brisa ler. Todas as telas: /brisa tudo. Recarregar TXT: /brisa recarregar. Diagnóstico do diário, habilidades e itens: /brisa diagnostico." });
         PluginInterface.UiBuilder.DisableCutsceneUiHide = true;
         PluginInterface.UiBuilder.Draw += Draw;
         PluginInterface.UiBuilder.OpenConfigUi += OpenSettings;
@@ -211,7 +211,7 @@ public sealed partial class Plugin : IDalamudPlugin
                 hovered.Changed = diagnostics.Enabled ? summary => diagnostics.Record(0, "tooltip-avaliado", "ActionDetail", summary) : null;
                 settingsOpen = true;
                 uiError = capture.Diagnostics.Enabled
-                    ? "Diagnóstico (diário e habilidades) LIGADO. Reproduza o problema e use /brisa diagnostico de novo para desligar. Arquivo: " + capture.Diagnostics.Path
+                    ? "Diagnóstico (diário, habilidades e itens) LIGADO. Reproduza o problema e use /brisa diagnostico de novo para desligar. Arquivo: " + capture.Diagnostics.Path
                     : "Diagnóstico desligado. Arquivo: " + capture.Diagnostics.Path;
                 break;
             default: settingsOpen = !settingsOpen; break;
