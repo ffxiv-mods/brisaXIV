@@ -5,6 +5,17 @@ Ele busca o original **japonês** de cada texto nos arquivos do próprio jogo e 
 um resultado mais fiel que traduzir do inglês. As traduções ficam num TXT permanente: um texto traduzido uma vez
 nunca é enviado de novo a um tradutor.
 
+## Por que traduzir do japonês
+
+Nós, que desenvolvemos o Brisa XIV, queríamos viver a história do jogo do jeito que ela foi escrita originalmente.
+A localização para o inglês muda o sentido de muita coisa, e muitas vezes sem necessidade, só para adaptar o texto
+ao público norte-americano. Esse público não está tão próximo de nós, brasileiros, que crescemos vendo anime e já
+estamos acostumados com a tradução que respeita o original.
+
+Traduzir para o português a partir do inglês seria traduzir uma adaptação, perdendo boa parte do contexto e da
+intenção do texto japonês. Por isso o Brisa XIV parte sempre do original japonês: acreditamos que assim a
+experiência fica mais fiel e mais próxima do que os autores quiseram contar.
+
 ## Instalação
 
 1. No jogo, abra `/xlsettings` → **Experimental** → **Custom Plugin Repositories**.
