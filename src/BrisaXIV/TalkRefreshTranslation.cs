@@ -8,8 +8,8 @@ namespace BrisaXIV;
 
 // Translates an NPC dialogue line before the game processes it: the Talk refresh values carry the
 // line (value 0) and the speaker (value 1). With a translation already available, the values are
-// replaced and the game itself lays out the box, wraps the lines and types the text out, as the
-// Echoglossian plugin does. Lines still being translated keep the PreDraw path of GameTextCapture.
+// replaced and the game itself lays out the box, wraps the lines and types the text out.
+// Lines still being translated keep the PreDraw path of GameTextCapture.
 internal sealed unsafe class TalkRefreshTranslation(Func<TranslationRouter> router, Configuration config, InjectedTextMap injected)
 {
     public void PreRefresh(AddonEvent type, AddonArgs args)

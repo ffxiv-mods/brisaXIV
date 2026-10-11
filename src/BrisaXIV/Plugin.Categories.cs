@@ -54,12 +54,20 @@ public sealed partial class Plugin
             { config.CategoryTitles.Remove(part); config.CategoryDescriptions.Remove(part); }
     }
 
+    // Everything outside the story and quest categories: native layout there is still being tuned.
+    private void SetExperimentalCategories(bool enabled)
+    {
+        config.WindowTitles = config.Items = config.Actions = config.Menus = config.Confirmations = config.Notices = config.OtherWindows = enabled;
+        config.CharacterNames = config.NamePlates = enabled;
+        config.Locations = config.Crafting = config.Collections = enabled;
+        foreach (var part in PartCategories.Where(part => part != "Missões")) { config.CategoryTitles.Remove(part); config.CategoryDescriptions.Remove(part); }
+        PluginInterface.SavePluginConfig(config);
+    }
+
+    // The supported categories: dialogue, cutscene subtitles, quests, objectives and the journal.
     private void DrawTextCategories()
     {
         ImGui.TextWrapped("As opções são salvas automaticamente. Desligar uma categoria devolve seus textos ao idioma do jogo, sem apagar traduções do TXT ou alterar a preparação do catálogo.");
-        if (ImGui.Button("Ativar todas")) SetAllTextCategories(true);
-        ImGui.SameLine();
-        if (ImGui.Button("Desativar todas")) SetAllTextCategories(false);
         var changed = false;
         var enabledBefore = PartCategories.ToDictionary(part => part, MainCategoryEnabled);
         BeginCard("StoryCategories"); ImGui.TextUnformatted("História e missões");
@@ -74,6 +82,22 @@ public sealed partial class Plugin
             "Liga ou desliga a tradução das duas janelas do Journal: lista de missões e detalhes da missão selecionada. Ao desligar, o texto original volta a aparecer sem apagar o TXT. Título e descrição seguem a subdivisão de Missões. Também pode alternar com /brisa jornal."))
         { config.Journal = journal; changed = true; }
         EndCard();
+        changed |= ClearPartsOfEnabledCategories(enabledBefore);
+        if (changed) PluginInterface.SavePluginConfig(config);
+        ImGui.TextWrapped("Itens, habilidades, menus, nomes, avisos e outras janelas ficam na aba Experimental: funcionam, mas o encaixe no layout do jogo ainda está sendo ajustado.");
+        if (ImGui.Button("Abrir Experimental")) dashboardPage = DashboardPage.Experimental;
+    }
+
+    // Categories whose native layout is still being tuned; off by default on new installations.
+    private void DrawExperimentalCategories()
+    {
+        ImGui.TextColored(Amber, "Estas traduções podem não sair 100% certas: textos cortados, caixas com tamanho diferente ou trechos em inglês.");
+        ImGui.TextWrapped("Ative só o que quiser testar. Se algo sair estranho, desligue a opção (o texto original volta na hora) e, se puder, use /brisa diagnostico para registrar o problema.");
+        if (ImGui.Button("Ativar todas as experimentais")) SetExperimentalCategories(true);
+        ImGui.SameLine();
+        if (ImGui.Button("Desativar todas as experimentais")) SetExperimentalCategories(false);
+        var changed = false;
+        var enabledBefore = PartCategories.ToDictionary(part => part, MainCategoryEnabled);
         BeginCard("DetailCategories"); ImGui.TextUnformatted("Detalhes e descrições");
         changed |= ToggleRow("Itens e descrições", ref config.Items,
             "Traduz a janela de detalhes exibida ao passar o cursor sobre um item, incluindo seu nome e descrição quando disponíveis. As listas do inventário pertencem à categoria Menus.");

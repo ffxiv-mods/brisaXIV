@@ -6,7 +6,7 @@ namespace BrisaXIV;
 
 public sealed partial class Plugin
 {
-    private enum DashboardPage { Progress, Costs, General, Translator, Hud, Preparation, File, Quests, Test, Categories }
+    private enum DashboardPage { Progress, Costs, General, Translator, Hud, Preparation, File, Quests, Test, Categories, Experimental }
     private DashboardPage dashboardPage = DashboardPage.Progress;
     private static readonly string DisplayVersion = $"Versão {typeof(Plugin).Assembly.GetName().Version?.ToString(3)} · API 15";
     private static readonly Vector4 Accent = new(0.65f, 0.43f, 0.96f, 1);
@@ -100,6 +100,7 @@ public sealed partial class Plugin
         DashboardPage.Translator => ("Tradutor", "Provedor, credenciais protegidas e limites de envio."),
         DashboardPage.Hud => ("HUD e textos", "Cobertura das janelas e apresentação das falas."),
         DashboardPage.Categories => ("O que traduzir", "Escolha os textos que aparecem em português. Passe o mouse sobre ? para saber mais."),
+        DashboardPage.Experimental => ("Experimental", "Itens, habilidades, menus, nomes e outras janelas ainda em ajuste."),
         DashboardPage.Preparation => ("Preparação", "Continue o catálogo da expansão mais nova para a antiga."),
         DashboardPage.File => ("Arquivo de traduções", "Seu TXT permanente e recuperação de falhas."),
         DashboardPage.Quests => ("Missões", "Prepare as falas antes de iniciar uma missão."),
@@ -133,7 +134,7 @@ public sealed partial class Plugin
             if (ShowAICosts) Nav(DashboardPage.Costs, "Custos da IA");
             ImGui.Spacing(); ImGui.TextColored(Muted, "CONFIGURAÇÕES");
             Nav(DashboardPage.General, "Geral"); Nav(DashboardPage.Translator, "Tradutor"); Nav(DashboardPage.Hud, "HUD e textos");
-            Nav(DashboardPage.Categories, "O que traduzir");
+            Nav(DashboardPage.Categories, "O que traduzir"); Nav(DashboardPage.Experimental, "Experimental");
 #if !BRISA_READ_ONLY
             Nav(DashboardPage.Preparation, "Preparação");
 #endif
@@ -158,6 +159,7 @@ public sealed partial class Plugin
                 case DashboardPage.General: DrawGeneral(); break;
                 case DashboardPage.Hud: DrawHudSettings(); break;
                 case DashboardPage.Categories: DrawTextCategories(); break;
+                case DashboardPage.Experimental: DrawExperimentalCategories(); break;
                 case DashboardPage.File: DrawFileSettings(); break;
                 case DashboardPage.Translator: DrawTranslatorSettings(); break;
 #if !BRISA_READ_ONLY
