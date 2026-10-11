@@ -261,6 +261,8 @@ internal sealed unsafe class GameTextCapture
                 }
                 else presentation.ShouldWait(Environment.TickCount64, false, maximumWait);
                 translated = TextRules.Normalize(translated);
+                // Dialogue lines flow into the box width instead of keeping Japanese manual breaks.
+                if (!characterName && DialogueNames.Contains(addonName)) translated = TextRules.FlowDialogue(translated);
                 if (applied.TryGetValue(address, out saved))
                 {
                     if (translated == saved.Translation && loading == saved.Loading && current == saved.Rendered && NativeTextLayout.IsCurrent(manager, saved.Layout)) continue;

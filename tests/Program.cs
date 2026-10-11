@@ -17,6 +17,13 @@ async Task WaitUntil(Func<bool> check) { var end = DateTime.UtcNow.AddSeconds(8)
 
 Check(TextRules.ContainsJapanese("こんにちは") && TextRules.ContainsJapanese("冒険") && TextRules.ContainsJapanese("ｱｲｳ"), "Japanese scripts detected");
 Check(!TextRules.ContainsJapanese("Português: ação, João"), "Portuguese is not translated again");
+Check(TextRules.FlowDialogue("Como os guardas estavam adormecidos,\nnão há dúvida de que\n  quem os ajudou foi Leophine.")
+    == "Como os guardas estavam adormecidos, não há dúvida de que quem os ajudou foi Leophine.",
+    "Japanese manual line breaks in a translated dialogue line become one flowing text for the box word wrap");
+Check(TextRules.FlowDialogue("けど、数が少ない。\nここにいるのは") == "けど、数が少ない。ここにいるのは"
+    && TextRules.FlowDialogue("Sem quebra.") == "Sem quebra." && TextRules.FlowDialogue("Fim.\n\nOutra.") == "Fim. Outra.",
+    "Untranslated Japanese joins without spaces, text without breaks is unchanged, and blank lines collapse");
+Check(!TextRules.ContainsJapanese("Ele disse 「Vamos」！"), "Japanese punctuation alone does not route Portuguese text as Japanese");
 var nativeNewline = Encoding.UTF8.GetBytes("最初").Concat(new byte[] { 2, 0x10, 1, 3 }).Concat(Encoding.UTF8.GetBytes("最後")).ToArray();
 Check(NativeTextContent.Extract(new ReadOnlySeStringSpan(nativeNewline)) == "最初\n最後", "Native newline payload and quest text share the same cache identity");
 Check(NativeTextContent.CanReplace(new ReadOnlySeStringSpan(nativeNewline)), "Multiline dialogue can be replaced in native HUD");
