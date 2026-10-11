@@ -186,7 +186,7 @@ public sealed partial class Plugin
         sourceChanged |= ToggleRow("Usar idioma atual se não houver original japonês", ref config.TranslateUnmatched);
 #if !BRISA_READ_ONLY
         sourceChanged |= ToggleRow("Priorizar falas e escolhas do NPC", ref config.PrioritizeDialogue);
-        sourceChanged |= ToggleRow("Google Tradutor quando faltar tradução ou o tradutor falhar", ref config.GoogleForMissing);
+        sourceChanged |= ToggleRow("Traduzir o que faltar ou falhar: OpenAI, DeepL e Google, nessa ordem, conforme as chaves", ref config.GoogleForMissing);
 #endif
         if (sourceChanged) { router = MakeRouter(); changed = true; }
         if (changed) PluginInterface.SavePluginConfig(config);
@@ -221,7 +221,7 @@ public sealed partial class Plugin
         if (ImGui.Button("Recarregar TXT")) { file.Reload(); RetryErrors(); }
         ImGui.TextWrapped("Cada tradução é gravada imediatamente. A cópia .bak permite recuperar o arquivo. A conferência do catálogo procura textos ausentes, inclusive antes do cursor salvo.");
         if (file.Warning != null) ImGui.TextWrapped(file.Warning);
-        ImGui.TextWrapped("Traduções novas feitas durante o jogo (Google e idioma do cliente) também ficam separadas em: " + journal.Path);
+        ImGui.TextWrapped("Traduções novas feitas durante o jogo também ficam separadas em: " + journal.Path);
         if (journal.Warning != null) ImGui.TextWrapped(journal.Warning); EndCard();
         BeginCard("Recovery"); ImGui.TextUnformatted("Recuperação");
         ImGui.TextWrapped(queue.PausedReason ?? clientQueue.PausedReason ?? "Falhas isoladas voltam automaticamente depois de outros textos salvos, sem interromper a fila.");

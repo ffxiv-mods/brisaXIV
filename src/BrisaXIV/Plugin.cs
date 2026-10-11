@@ -34,8 +34,10 @@ public sealed partial class Plugin : IDalamudPlugin
     private TranslationQueue clientQueue;
     private TranslationRouter router;
 #if !BRISA_READ_ONLY
-    // Google Tradutor for what the main path cannot deliver; see TranslationRouter.
-    private FallbackQueues fallback;
+    // What the main path cannot deliver goes to OpenAI, DeepL and Google, in that order,
+    // among the providers with a key; see TranslationRouter. Extra queues are owned here.
+    private IReadOnlyList<FallbackQueues> fallback = [];
+    private readonly List<TranslationQueue> fallbackQueues = [];
 #endif
     private readonly TranslationJournal journal;
     private readonly HoveredTextSources hovered;
@@ -139,6 +141,14 @@ public sealed partial class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.OpenMainUi += OpenReading;
         Framework.Update += Update;
         Lifecycle.RegisterListener(AddonEvent.PreDraw, BeforeDraw);
+        Lifecycle.RegisterListener(AddonEvent.PreRequestedUpdate, ["ActionDetail", "ItemDetail"], BeforeTooltipUpdate);
+    }
+
+    private void BeforeTooltipUpdate(AddonEvent type, AddonArgs args)
+    {
+        if (captureStopped) return;
+        try { capture.BeforeTooltipUpdate(args.Addon.Address); }
+        catch { captureStopped = true; uiError = "Falha ao preparar um tooltip: captura pausada. Reabra a janela do jogo e use Retomar captura."; }
     }
 
     private string ClientLanguageCode => ClientState.ClientLanguage switch { ClientLanguage.Japanese => "JA", ClientLanguage.German => "DE", ClientLanguage.French => "FR", _ => "EN" };
@@ -155,17 +165,49 @@ public sealed partial class Plugin : IDalamudPlugin
             capacity: Math.Max(128, parallel * 40), progress: progress, parallelism: parallel,
             concurrency: config.Provider == TranslationProvider.OpenAI ? concurrency : null,
             retryPath: Path.Combine(Path.GetDirectoryName(file.Path)!, japanese ? "pendencias-ja.json" : "pendencias-cliente-" + ClientLanguageCode + ".json"),
-            // The Japanese queue also runs the bulk preparation; only on-screen client text is journaled.
-            stored: japanese ? null : journal.Append);
+            // The Japanese queue also runs the bulk preparation; it is journaled only once the catalog is
+            // complete, when everything it translates is text found missing while playing.
+            stored: japanese ? JournalAfterPreparation : journal.Append);
 #endif
     }
 #if !BRISA_READ_ONLY
-    private TranslationQueue MakeGoogleQueue(bool japanese) => new(file,
-        new Translator(new(TranslationProvider.Google, "", false, "", "", japanese ? "JA" : ClientLanguageCode, false), googleCadence: googleCadence),
-        progress: progress,
-        retryPath: Path.Combine(Path.GetDirectoryName(file.Path)!, japanese ? "pendencias-google-ja.json" : "pendencias-google-cliente-" + ClientLanguageCode + ".json"),
-        stored: journal.Append);
-    private FallbackQueues MakeFallback() => new(MakeGoogleQueue(true), MakeGoogleQueue(false));
+    private void JournalAfterPreparation(string source, string translation)
+    {
+        if (preparation is { Completed: true }) journal.Append(source, translation);
+    }
+
+    // OpenAI, DeepL and Google, in that order, among the providers with a key (Google needs none).
+    // The main provider reuses its queues; the others get their own, journaled as new translations.
+    private IReadOnlyList<FallbackQueues> MakeFallback()
+    {
+        foreach (var extra in fallbackQueues) extra.Dispose();
+        fallbackQueues.Clear();
+        var chain = new List<FallbackQueues>();
+        if (!string.IsNullOrWhiteSpace(openAIApiKey)) chain.Add(ProviderQueues(TranslationProvider.OpenAI));
+        if (!string.IsNullOrWhiteSpace(apiKey)) chain.Add(ProviderQueues(TranslationProvider.DeepL));
+        chain.Add(ProviderQueues(TranslationProvider.Google));
+        return chain;
+    }
+
+    private FallbackQueues ProviderQueues(TranslationProvider provider)
+    {
+        if (provider == config.Provider) return new(queue, clientQueue);
+        var queues = new FallbackQueues(MakeProviderQueue(provider, true), MakeProviderQueue(provider, false));
+        fallbackQueues.Add(queues.Japanese); fallbackQueues.Add(queues.Client);
+        return queues;
+    }
+
+    private TranslationQueue MakeProviderQueue(TranslationProvider provider, bool japanese)
+    {
+        var name = provider switch { TranslationProvider.OpenAI => "openai", TranslationProvider.DeepL => "deepl", _ => "google" };
+        return new(file, new Translator(new(provider, apiKey, config.DeepLPro, config.OllamaUrl, config.OllamaModel,
+                japanese ? "JA" : ClientLanguageCode, false, openAIApiKey, config.OpenAIModel,
+                config.OpenAIRequestsPerMinute, config.OpenAITokensPerMinute),
+                openAIRateLimiter: openAIRateLimiter, openAIDiagnostic: OpenAIDiagnostic, aiUsage: usageLedger.Record, googleCadence: googleCadence),
+            progress: progress,
+            retryPath: Path.Combine(Path.GetDirectoryName(file.Path)!, $"pendencias-{name}-" + (japanese ? "ja.json" : "cliente-" + ClientLanguageCode + ".json")),
+            stored: journal.Append);
+    }
 #endif
     private bool DialoguePriorityEnabled =>
 #if BRISA_READ_ONLY
@@ -184,7 +226,7 @@ public sealed partial class Plugin : IDalamudPlugin
     {
         shownBillingFailure = null; queue.RetryErrors(); clientQueue.RetryErrors();
 #if !BRISA_READ_ONLY
-        fallback.Japanese.RetryErrors(); fallback.Client.RetryErrors();
+        foreach (var extra in fallbackQueues) extra.RetryErrors();
 #endif
         if (resumePreparation) preparation.Resume();
     }
@@ -192,7 +234,7 @@ public sealed partial class Plugin : IDalamudPlugin
     {
         shownBillingFailure = null; queue.Dispose(); clientQueue.Dispose(); concurrency.ClearBillingPause(); queue = MakeQueue(); clientQueue = MakeQueue(false);
 #if !BRISA_READ_ONLY
-        fallback.Japanese.Dispose(); fallback.Client.Dispose(); fallback = MakeFallback();
+        fallback = MakeFallback();
 #endif
         router = MakeRouter();
     }
@@ -459,6 +501,7 @@ public sealed partial class Plugin : IDalamudPlugin
     {
         Framework.Update -= Update;
         Lifecycle.UnregisterListener(AddonEvent.PreDraw, BeforeDraw);
+        Lifecycle.UnregisterListener(AddonEvent.PreRequestedUpdate, ["ActionDetail", "ItemDetail"], BeforeTooltipUpdate);
         PluginInterface.UiBuilder.Draw -= Draw;
         PluginInterface.UiBuilder.OpenConfigUi -= OpenSettings;
         PluginInterface.UiBuilder.OpenMainUi -= OpenReading;
@@ -475,7 +518,7 @@ public sealed partial class Plugin : IDalamudPlugin
         queue.Dispose();
         clientQueue.Dispose();
 #if !BRISA_READ_ONLY
-        fallback.Japanese.Dispose(); fallback.Client.Dispose();
+        foreach (var extra in fallbackQueues) extra.Dispose();
 #endif
         originals.Dispose();
         history.Clear(); apiKey = "";

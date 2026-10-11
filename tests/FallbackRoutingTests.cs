@@ -63,7 +63,7 @@ internal static class FallbackRoutingTests
         using (var googleJa = new TranslationQueue(file, new Translator(new(TranslationProvider.Google, "", false, "", "", "JA", false), Google(sent)), stored: journal.Append))
         using (var googleClient = new TranslationQueue(file, new Translator(new(TranslationProvider.Google, "", false, "", "", "EN", false), Google(sent)), stored: journal.Append))
         {
-            var router = new TranslationRouter(primary, file, index, true, client, cachedOnly: true, fallback: new(googleJa, googleClient), live: live);
+            var router = new TranslationRouter(primary, file, index, true, client, cachedOnly: true, fallback: [new(googleJa, googleClient)], live: live);
             check(router.Get("Delivers an attack with a potency of 380.", true, "Itens e ações").Pending, "A tooltip missing from the TXT is queued on Google in TXT-only mode");
             router.Get("Party leader Some Player", true, "Outras janelas");
             await Until(() => file.TryGet("対象に物理攻撃。　威力：380", out _));
@@ -85,7 +85,7 @@ internal static class FallbackRoutingTests
         using (var googleJa = new TranslationQueue(contentFile, new Translator(new(TranslationProvider.Google, "", false, "", "", "JA", false), Google(contentSent))))
         using (var googleClient = new TranslationQueue(contentFile, new Translator(new(TranslationProvider.Google, "", false, "", "", "EN", false), Google(contentSent))))
         {
-            var router = new TranslationRouter(primary, contentFile, index, true, client, cachedOnly: true, fallback: new(googleJa, googleClient));
+            var router = new TranslationRouter(primary, contentFile, index, true, client, cachedOnly: true, fallback: [new(googleJa, googleClient)]);
             router.Get("Craft 1 Rakshasa Axe and deliver it to Quswib.", true, "Missões");
             router.Get("Party member Some Player", true, "Outras janelas");
             await Until(() => contentFile.TryGet("Craft 1 Rakshasa Axe and deliver it to Quswib.", out _));
@@ -102,13 +102,37 @@ internal static class FallbackRoutingTests
         using (var googleJa = new TranslationQueue(failingFile, new Translator(new(TranslationProvider.Google, "", false, "", "", "JA", false), Google(failed))))
         using (var googleClient = new TranslationQueue(failingFile, new Translator(new(TranslationProvider.Google, "", false, "", "", "EN", false), Google(failed))))
         {
-            var router = new TranslationRouter(primary, failingFile, index, true, fallback: new(googleJa, googleClient));
+            var router = new TranslationRouter(primary, failingFile, index, true, fallback: [new(primary, primary), new(googleJa, googleClient)]);
             router.Get("失敗する文");
             await Until(() => router.Get("失敗する文", false).Error != null || failingFile.TryGet("失敗する文", out _));
             router.Get("失敗する文");
             await Until(() => failingFile.TryGet("失敗する文", out _));
             check(failed.Single() == ("ja", "失敗する文") && failingFile.TryGet("失敗する文", out var rescued) && rescued == "PT:失敗する文",
                 "A main provider failure falls back to Google and saves the result");
+        }
+
+        // In TXT-only mode the first provider of the chain (here the main DeepL queue, as with a configured
+        // key) translates a missing game original; Google stays unused while it succeeds.
+        var chainFile = new TranslationFile(Path.Combine(scratch, "fallback-chain.txt"));
+        var chainGoogle = new ConcurrentQueue<(string Language, string Text)>();
+        var deepLSent = new ConcurrentQueue<string>();
+        var deepL = new Handler(async request =>
+        {
+            using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync());
+            var texts = body.RootElement.GetProperty("text").EnumerateArray().Select(x => x.GetString()!).ToArray();
+            foreach (var text in texts) deepLSent.Enqueue(text);
+            return new(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(new { translations = texts.Select(x => new { text = "DL:" + x }) })) };
+        });
+        using (var primary = new TranslationQueue(chainFile, new Translator(new(TranslationProvider.DeepL, "key", false, "", "", GoogleFallback: false), deepL)))
+        using (var googleJa = new TranslationQueue(chainFile, new Translator(new(TranslationProvider.Google, "", false, "", "", "JA", false), Google(chainGoogle))))
+        using (var googleClient = new TranslationQueue(chainFile, new Translator(new(TranslationProvider.Google, "", false, "", "", "EN", false), Google(chainGoogle))))
+        {
+            var router = new TranslationRouter(primary, chainFile, index, true, cachedOnly: true, fallback: [new(primary, primary), new(googleJa, googleClient)]);
+            router.Get("未保存の原文", true, "Menus");
+            await Until(() => chainFile.TryGet("未保存の原文", out _));
+            await Task.Delay(100);
+            check(deepLSent.SequenceEqual(new[] { "未保存の原文" }) && chainGoogle.IsEmpty && chainFile.TryGet("未保存の原文", out var chained) && chained == "DL:未保存の原文",
+                "TXT-only mode sends a missing original to the first configured provider of the chain before Google");
         }
 
         // A redirect to Google's "unusual traffic" page pauses every translator sharing the cadence.
