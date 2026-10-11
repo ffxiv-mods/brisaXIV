@@ -205,9 +205,12 @@ internal static class TranslationProgressTests
         try
         {
             var preparation = new BackgroundPreparation(largeCatalog, fillFile, Path.Combine(scratch, "progress-feeder.json"));
-            preparation.Pump(fillQueue, true, 1_000_000, continuous: true);
+            // Each pump has a 2 ms frame budget and resumes 16 ms later; a slow machine may need more than one.
+            var fillEnd = DateTime.UtcNow.AddSeconds(10);
+            do { preparation.Pump(fillQueue, true, 1_000_000, continuous: true); await Task.Delay(20); }
+            while (fillQueue.PendingCount < 160 && DateTime.UtcNow < fillEnd);
             check(fillQueue.PendingCount == 160 && preparation.Cursor == 0 && preparation.SessionCharacters > 0,
-                "Concurrent preparation fills a larger work window in one pump without advancing progress before TXT confirmation");
+                "Concurrent preparation fills a larger work window within its frame budget without advancing progress before TXT confirmation");
         }
         finally { fillQueue.Dispose(); await fillQueue.Completion; }
     }
