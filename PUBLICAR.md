@@ -1,14 +1,20 @@
 # Publicar e instalar pelo Dalamud
 
-A publicação é automática e acontece **somente pela branch `master`**. O workflow `.github/workflows/release.yml` roda a cada push na `master`. Ele compila o plugin com as referências oficiais do Dalamud, roda os testes e gera o `latest.zip` (DLL, manifesto e `traducoes.txt`) e o `repo.json`. Depois cria a release `v<versão>` com esses dois anexos. A `develop` não dispara o workflow e nunca gera releases.
+A publicação usa **git flow** e é automática. O nome da release no git flow define a versão, no padrão `releaseV<maior>.<menor>.<correção>` (ex.: `releaseV0.0.1`, `releaseV0.0.2`). Não é preciso editar a versão em nenhum arquivo.
+
+Quando a tag `releaseV…` chega ao GitHub, o workflow `.github/workflows/release.yml` faz o seguinte:
+1. confere se a tag aponta para um commit da **`master`**; se não apontar, recusa;
+2. compila a DLL com a versão da tag e com as referências oficiais do Dalamud, e roda os testes;
+3. gera `latest.zip` (DLL, manifesto e `traducoes.txt`) e `repo.json`;
+4. cria a release com esses dois anexos.
+
+A `develop` nunca gera releases.
 
 ## URL para o Dalamud
 
 ```text
 https://github.com/ffxiv-mods/brisaXIV/releases/latest/download/repo.json
 ```
-
-Ela sempre aponta para o `repo.json` da **última release**, e só a `master` cria releases.
 
 1. No jogo, abra `/xlsettings` → **Experimental** → **Custom Plugin Repositories**, cole a URL, marque a caixa de ativação e salve.
 2. Abra `/xlplugins`, busque **Brisa XIV** e instale.
@@ -20,23 +26,27 @@ Se estiver usando a DLL de desenvolvimento (`Instalar-No-Dalamud.ps1`), desative
 
 ## Publicar uma nova versão
 
-1. Na `develop`, aumente a versão em **dois lugares**, com o mesmo número:
-   - `src/BrisaXIV/BrisaXIV.csproj` → `<Version>0.8.5</Version>`
-   - `src/BrisaXIV/BrisaXIV.json` → `"AssemblyVersion": "0.8.5.0"`
-2. Faça o merge da `develop` na `master` e dê push.
-3. Acompanhe em **Actions → Release**. Ao terminar, a release `v0.8.5` aparece em **Releases** e o Dalamud oferece a atualização.
+```powershell
+git flow release start releaseV0.0.2
+# (opcional) ajustes finais e commits na branch release/releaseV0.0.2
+git flow release finish releaseV0.0.2
+git push origin master develop --follow-tags
+```
 
-Se a tag da versão já existir, o workflow não publica nada (aparece o aviso no log). Para republicar sem mudar código, use **Actions → Release → Run workflow** na `master`, depois de aumentar a versão.
+Acompanhe em **Actions → Release**. Ao terminar, a release `releaseV0.0.2` aparece em **Releases**, e o Dalamud oferece a atualização no `/xlplugins`.
 
-Não crie releases ou tags manualmente a partir da `develop`. Como a URL usa a *última release*, uma release manual passaria a ser a versão distribuída.
+- Cada release precisa de um número **maior** que o anterior. O Dalamud só oferece atualização quando a versão sobe.
+- O git flow deste repositório está configurado sem prefixo de tag (`gitflow.prefix.versiontag` vazio). Assim, a tag fica exatamente com o nome da release. Em um clone novo, rode `git config gitflow.prefix.versiontag ""` depois do `git flow init`.
+- Se a tag for enviada antes da `master`, o workflow falha avisando que o commit não está na master. Envie a `master` e use **Re-run jobs**.
+- Não crie releases manualmente pela interface do GitHub. A URL usa a *última release*, e uma release manual passaria a ser a versão distribuída.
 
 ## Gerar o pacote localmente (opcional)
 
 ```powershell
-.\Compilar.ps1
+.\Compilar.ps1 -Version 0.0.2
 .\Empacotar-Release.ps1          # gera release\latest.zip e release\repo.json (pasta ignorada pelo Git)
 ```
 
-O script falha se a DLL e o manifesto tiverem versões diferentes, ou se `traducoes.txt` for só o ponteiro do Git LFS (nesse caso, rode `git lfs pull`).
+Sem `-Version`, vale o `<Version>` do csproj. O script falha se `traducoes.txt` for só o ponteiro do Git LFS (nesse caso, rode `git lfs pull`).
 
 Nunca anexe `.dpapi`, `uso-ia.jsonl`, `custos-ia.json`, logs, pendências, progresso ou pastas de dados do Dalamud. O pacote contém somente os binários e o TXT de traduções.

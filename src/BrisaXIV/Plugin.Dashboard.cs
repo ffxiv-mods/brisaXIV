@@ -8,6 +8,7 @@ public sealed partial class Plugin
 {
     private enum DashboardPage { Progress, Costs, General, Translator, Hud, Preparation, File, Quests, Test, Categories }
     private DashboardPage dashboardPage = DashboardPage.Progress;
+    private static readonly string DisplayVersion = $"Versão {typeof(Plugin).Assembly.GetName().Version?.ToString(3)} · API 15";
     private static readonly Vector4 Accent = new(0.65f, 0.43f, 0.96f, 1);
     private static readonly Vector4 Mint = new(0.37f, 0.83f, 0.68f, 1);
     private static readonly Vector4 Muted = new(0.62f, 0.64f, 0.72f, 1);
@@ -140,7 +141,7 @@ public sealed partial class Plugin
 #if !BRISA_READ_ONLY
             ImGui.Spacing(); ImGui.TextColored(Muted, "FERRAMENTAS"); Nav(DashboardPage.Quests, "Missões"); Nav(DashboardPage.Test, "Teste de tradução");
 #endif
-            SectionDivider(); ImGui.TextColored(Muted, "Versão 0.8.4 · API 15");
+            SectionDivider(); ImGui.TextColored(Muted, DisplayVersion);
             if (ImGui.Button("Leitura ampliada", new Vector2(-1, 0))) readingOpen = true;
             ImGui.PopStyleVar(); ImGui.EndChild(); ImGui.SameLine(0, 18);
             ImGui.PushStyleColor(ImGuiCol.ChildBg, new Vector4(0, 0, 0, 0));

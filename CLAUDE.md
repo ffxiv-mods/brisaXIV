@@ -25,7 +25,14 @@ Brisa XIV é um plugin Dalamud (API 15, .NET 10, Windows x64) que traduz textos 
 
 Outros scripts: `Instalar-No-Dalamud.ps1` (registra `plugin\BrisaXIV.dll` em DevPluginLoadLocations; exige o jogo fechado), `Restaurar-TXT-Inicial.ps1` (recompõe `data/traducoes-iniciais.zip.*` sem sobrescrever TXT existente), `Empacotar-Release.ps1` (gera `release/latest.zip` + `release/repo.json`), `Gerar-Somente-Leitura.ps1` (build final somente leitura). `Preparar-Publicacao.ps1` é o fluxo manual antigo (repo `BrisasXIV/BrisasXIV`), substituído pelo workflow.
 
-**Release:** `.github/workflows/release.yml` publica somente a partir de push na `master`. Ele baixa o Dalamud de `goatcorp.github.io/dalamud-distrib/latest.zip`, roda `Compilar.ps1` e `Empacotar-Release.ps1` e cria a release `v<Version>` com `latest.zip` e `repo.json`. Se a tag já existir, não faz nada. O Dalamud usa `https://github.com/ffxiv-mods/brisaXIV/releases/latest/download/repo.json`. Para publicar, aumente `<Version>` no csproj **e** `AssemblyVersion` em `src/BrisaXIV/BrisaXIV.json` (o workflow falha se divergirem). Detalhes em `PUBLICAR.md`.
+**Release (git flow):** `git flow release start/finish releaseV<x.y.z>` cria a tag `releaseV<x.y.z>` (o prefixo de tag do git flow fica vazio). O push da tag dispara `.github/workflows/release.yml`, que:
+1. recusa tags fora do padrão ou que não estejam na `master`;
+2. baixa o Dalamud de `goatcorp.github.io/dalamud-distrib/latest.zip`;
+3. roda `Compilar.ps1 -Version <x.y.z>`, que sobrescreve `<Version>` do csproj;
+4. roda `Empacotar-Release.ps1`, que grava a versão da DLL no manifesto do ZIP;
+5. cria a release com `latest.zip` + `repo.json`.
+
+A tag é a única fonte da versão em produção. O Dalamud usa `https://github.com/ffxiv-mods/brisaXIV/releases/latest/download/repo.json`. Detalhes em `PUBLICAR.md`.
 
 ## Arquitetura
 
@@ -54,4 +61,4 @@ Outros scripts: `Instalar-No-Dalamud.ps1` (registra `plugin\BrisaXIV.dll` em Dev
 
 ## Versão
 
-A versão aparece em `src/BrisaXIV/BrisaXIV.csproj` (`<Version>`), `src/BrisaXIV/BrisaXIV.json` (`AssemblyVersion`, obrigatório para o release), `README.md` e `LEIA-ME.md`. Mantenha todas sincronizadas ao subir versão.
+Em release, a versão vem da tag git flow. `<Version>` no csproj e `AssemblyVersion` em `BrisaXIV.json` valem só para builds locais. O painel lê a versão da própria DLL (`DisplayVersion` em `Plugin.Dashboard.cs`); não escreva a versão fixa no código. `README.md`/`LEIA-ME.md`/`VALIDACAO.md` citam 0.8.4, numeração anterior ao primeiro release público (releaseV0.0.1).

@@ -5,7 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <PlatformTarget>x64</PlatformTarget>
-    <Version>0.8.4</Version>
+    <Version>0.0.1</Version>
     <PathMap>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/../../../..'))=/_/workspace</PathMap>
     <AssemblyName>BrisaXIV</AssemblyName>
     <DalamudHome Condition="'$(DalamudHome)' == ''">$(APPDATA)\XIVLauncher\addon\Hooks\dev</DalamudHome>

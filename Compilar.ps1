@@ -1,4 +1,4 @@
-param([string]$DotnetPath = 'dotnet', [string]$ScratchDirectory = (Join-Path $env:TEMP 'BrisaXIV-build'))
+param([string]$DotnetPath = 'dotnet', [string]$ScratchDirectory = (Join-Path $env:TEMP 'BrisaXIV-build'), [string]$Version = '')
 $ErrorActionPreference = 'Stop'
 & (Join-Path $PSScriptRoot 'Restaurar-TXT-Inicial.ps1')
 $taskAppDataOriginal = $env:APPDATA
@@ -20,7 +20,9 @@ try {
     $env:NUGET_PACKAGES = Join-Path $ScratchDirectory 'nuget-packages'
     New-Item -ItemType Directory -Path (Join-Path $env:APPDATA 'NuGet'),$env:LOCALAPPDATA -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'NuGet.Config') -Destination (Join-Path $env:APPDATA 'NuGet\NuGet.Config') -Force
-    & $DotnetPath build (Join-Path $PSScriptRoot 'src\BrisaXIV\BrisaXIV.csproj') -c Release --nologo "-p:DalamudHome=$taskDalamud"
+    # -Version (vinda da tag releaseV<versão> no CI) sobrescreve <Version> do csproj e, com ela, a versão da DLL.
+    $taskVersionArgs = if ($Version) { @("-p:Version=$Version") } else { @() }
+    & $DotnetPath build (Join-Path $PSScriptRoot 'src\BrisaXIV\BrisaXIV.csproj') -c Release --nologo "-p:DalamudHome=$taskDalamud" @taskVersionArgs
     if ($LASTEXITCODE -ne 0) { throw 'A compilação falhou.' }
     & $DotnetPath run --project (Join-Path $PSScriptRoot 'tests\BrisaXIV.Tests.csproj') -c Release "-p:DalamudHome=$taskDalamud" -- (Join-Path $ScratchDirectory 'tests')
     if ($LASTEXITCODE -ne 0) { throw 'Os testes falharam.' }
