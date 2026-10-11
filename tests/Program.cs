@@ -187,6 +187,11 @@ using (var routingQueue = new TranslationQueue(routingFile, new Translator(new(T
         "A saved Japanese translation appears on the very first capture of an English line, bypassing the debounce and network");
     router.Get("未翻訳"); await Task.Delay(100);
     Check(routingCalls == 0, "TXT-only HUD never sends missing text for translation");
+    routingFile.Store("Slay steppe dzos and obtain their meat.", "Abata dzos da estepe e obtenha sua carne.");
+    Check(router.Get("Slay steppe dzos and obtain their meat. 2/4", true, "Missões").Text == "Abata dzos da estepe e obtenha sua carne. 2/4"
+        && router.Get("Slay steppe dzos and obtain their meat. 3/4", true, "Missões").Text == "Abata dzos da estepe e obtenha sua carne. 3/4"
+        && routingCalls == 0,
+        "An objective's progress counter reuses the sentence saved once, without translating every new count");
 }
 var recoveryPath = Path.Combine(scratch, "recovery.txt"); var recovery = new TranslationFile(recoveryPath); recovery.Store("回復", "Recuperação");
 File.Delete(recoveryPath);

@@ -16,12 +16,21 @@ public sealed class TranslationRouter(TranslationQueue queue, TranslationFile fi
     private static bool DialogueSentence(string scope, string text)
         => scope == "Falas" && text.Count(char.IsLetter) >= 12 && text.Count(char.IsWhiteSpace) >= 2;
     private readonly IReadOnlyList<FallbackQueues> chain = fallback ?? [];
+    private static readonly System.Text.RegularExpressions.Regex ProgressCounter =
+        new(@"^(.*\S)(\s+\d{1,5}/\d{1,5})$", System.Text.RegularExpressions.RegexOptions.Singleline | System.Text.RegularExpressions.RegexOptions.Compiled);
     public bool CanRequest(string scope, bool priority = false) => !cachedOnly || chain.Count > 0 || (prioritizeDialogue && (scope == "Falas" || priority));
     public TranslationView Get(string displayed, bool request = true, string scope = "", bool priority = false)
     {
         priority = request && prioritizeDialogue && (scope == "Falas" || priority);
         var main = request && (!cachedOnly || priority);
         if (file.TryGet(displayed, out var saved)) return new(saved, null, false);
+        // An objective's progress counter ("... 0/4") changes as the player advances: the sentence is
+        // translated (and saved) once without it, and the current counter is put back.
+        if (ProgressCounter.Match(displayed) is { Success: true } counter && counter.Groups[1].Value.Count(char.IsLetter) >= 8)
+        {
+            var sentence = Get(counter.Groups[1].Value, request, scope, priority);
+            return sentence.Text == null ? sentence : sentence with { Text = sentence.Text + counter.Groups[2].Value };
+        }
         if (!japaneseSource) return Fetch(clientQueue ?? queue, x => x.Client, displayed, request, main, priority, false);
         if (TextRules.ContainsJapanese(displayed)) return Fetch(queue, x => x.Japanese, displayed, request, main, priority, true);
         // Live sources come first: they hold the evaluated text of the hovered tooltip,
