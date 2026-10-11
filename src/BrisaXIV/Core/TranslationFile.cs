@@ -31,15 +31,7 @@ public sealed class TranslationFile
                 if (File.Exists(Path))
                 {
                     foreach (var line in File.ReadLines(Path, Encoding.UTF8))
-                    {
-                        if (line.StartsWith('#') || string.IsNullOrWhiteSpace(line)) continue;
-                        var separator = line.IndexOf('\t');
-                        if (separator < 1) continue;
-                        var source = TextRules.Normalize(TextRules.Unescape(line[..separator]));
-                        var translated = TextRules.Unescape(line[(separator + 1)..]);
-                        if (!string.IsNullOrWhiteSpace(source) && !string.IsNullOrWhiteSpace(translated))
-                            loaded[source] = translated;
-                    }
+                        if (TryParse(line, out var source, out var translated)) loaded[source] = translated;
                 }
                 else
                 {
@@ -58,6 +50,43 @@ public sealed class TranslationFile
             }
             catch (IOException) { Warning = "Não foi possível ler o arquivo de traduções. Confira as permissões e recarregue."; }
             catch (UnauthorizedAccessException) { Warning = "Sem permissão para ler ou criar o arquivo de traduções."; }
+        }
+    }
+
+    private static bool TryParse(string line, out string source, out string translated)
+    {
+        source = translated = "";
+        if (line.StartsWith('#') || string.IsNullOrWhiteSpace(line)) return false;
+        var separator = line.IndexOf('\t');
+        if (separator < 1) return false;
+        source = TextRules.Normalize(TextRules.Unescape(line[..separator]));
+        translated = TextRules.Unescape(line[(separator + 1)..]);
+        return !string.IsNullOrWhiteSpace(source) && !string.IsNullOrWhiteSpace(translated);
+    }
+
+    // Adds the originals of a newer packaged TXT that this file does not have yet, in one append.
+    // Personal entries and corrections are never replaced. Returns the number of added entries.
+    public int ImportMissing(string packagePath)
+    {
+        var missing = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var line in File.ReadLines(packagePath, Encoding.UTF8))
+            if (TryParse(line, out var source, out var translated) && !TryGet(source, out _)) missing[source] = translated;
+        lock (gate)
+        {
+            var added = missing.Where(x => !entries.ContainsKey(x.Key)).ToArray();
+            if (added.Length == 0) return 0;
+            var lines = new StringBuilder("\n");
+            foreach (var (source, translated) in added)
+                lines.Append(TextRules.Escape(source)).Append('\t').Append(TextRules.Escape(translated)).Append('\n');
+            File.AppendAllText(Path, lines.ToString(), new UTF8Encoding(false));
+            if (File.Exists(BackupPath)) File.AppendAllText(BackupPath, lines.ToString(), new UTF8Encoding(false));
+            foreach (var (source, translated) in added)
+            {
+                entries[source] = translated;
+                sourceAmount += TextAmount.Measure(source); portugueseAmount += TextAmount.Measure(translated);
+            }
+            Interlocked.Increment(ref generation);
+            return added.Length;
         }
     }
 

@@ -16,6 +16,7 @@ internal sealed unsafe class GameTextCapture
     private readonly Dictionary<nint, DialoguePresentation> presentations = new();
     private HashSet<string> npcNames = new(StringComparer.Ordinal);
     public void SetNpcNames(IEnumerable<string> names) => npcNames = names.Where(x => x.Length > 0).ToHashSet(StringComparer.Ordinal);
+    public HudDiagnostics? Diagnostics { get; set; }
     private readonly Dictionary<nint, AppliedText> applied = new();
     private readonly HashSet<nint> live = new();
     private readonly Dictionary<nint, double> since = new();
@@ -82,6 +83,7 @@ internal sealed unsafe class GameTextCapture
             var budget = 2048;
             Walk(addon, &addon->UldManager, addon->Id, name, active, config.NativeHud, restore, config.WaitForDialogue, config.DialogueWaitSeconds,
                 router, category ?? "", NpcInteraction(name), config, lines, visited, 0, false, ref budget);
+            if (budget <= 0 && Diagnostics?.Watches(name) == true) Diagnostics.Record((nint)addon, "limite", name, "varredura interrompida no limite de 2048 elementos");
             if (active && lines.Count > 0)
             {
                 var texts = lines.OrderBy(x => x.Y).ThenBy(x => x.X).Select(x => x.Text).Distinct(StringComparer.Ordinal).Take(160).ToArray();
@@ -105,6 +107,7 @@ internal sealed unsafe class GameTextCapture
         var budget = 2048;
         Walk(addon, &addon->UldManager, addon->Id, addon->NameString, active, config.NativeHud, restore, config.WaitForDialogue, config.DialogueWaitSeconds,
             router, category ?? "", NpcInteraction(addon->NameString), config, new List<(float, float, string)>(), new HashSet<nint>(), 0, false, ref budget);
+        if (budget <= 0 && Diagnostics?.Watches(addon->NameString) == true) Diagnostics.Record(addonAddress, "limite", addon->NameString, "varredura interrompida no limite de 2048 elementos");
     }
 
     private void Walk(AtkUnitBase* addon, AtkUldManager* manager, ushort addonId, string addonName, bool active, bool native, bool restore, bool showLoading, int maximumWait,
@@ -152,7 +155,11 @@ internal sealed unsafe class GameTextCapture
                             // The game can repopulate its original as the addon closes.
                             // Keep the last rendered text without any new API request.
                             if (NativeTextContent.TryReplace(new ReadOnlySeStringSpan(saved.OriginalBytes.AsSpan(0, saved.OriginalBytes.Length - 1)), saved.Rendered, out var closingBytes))
+                            {
                                 textNode->SetText(closingBytes.AsSpan());
+                                if (Diagnostics?.Watches(addonName) == true)
+                                    Diagnostics.Record(address, "regravado-oculto", addonName, $"origem={HudDiagnostics.Quote(saved.Original)} texto={HudDiagnostics.Quote(saved.Rendered)}");
+                            }
                         }
                     }
                     else
@@ -162,6 +169,13 @@ internal sealed unsafe class GameTextCapture
                         saved = null;
                     }
                 }
+                var diagnose = Diagnostics?.Watches(addonName) == true;
+                if (diagnose)
+                    Diagnostics!.Record(address, "lido", addonName,
+                        $"id={node->NodeId} pai=0x{(nint)node->ParentNode:X} visivel={Visible(node)} ativo={active} habilitado={nodeEnabled} " +
+                        $"atual={HudDiagnostics.Quote(current)} origem={HudDiagnostics.Quote(source)} " +
+                        $"registro={(prior == null ? "-" : HudDiagnostics.Quote(prior.Original) + "->" + HudDiagnostics.Quote(prior.Rendered))} " +
+                        $"mantido={saved != null}");
                 if (!active || !nodeEnabled || !Visible(node) || !TextRules.HasReadableText(source)) continue;
                 if (!presentations.TryGetValue(address, out var presentation)) presentations[address] = presentation = new();
                 presentation.ObserveSource(source);
@@ -170,9 +184,12 @@ internal sealed unsafe class GameTextCapture
                     lastSource[address] = source; since[address] = Environment.TickCount64;
                 }
                 var unchanged = (long)(Environment.TickCount64 - since[address]);
-                var result = characterName ? router.Get(source, false, category)
+                var result = characterName ? router.Get(source, true, SourceTextIndex.NamesScope)
                     : HudTranslation.Get(router, source, category, priority, unchanged);
                 if (unchanged >= 350 || result.Text != null) lines.Add((node->ScreenY, node->ScreenX, source));
+                if (diagnose)
+                    Diagnostics!.Record(address, "busca", addonName,
+                        $"origem={HudDiagnostics.Quote(source)} traducao={HudDiagnostics.Quote(result.Text)} erro={HudDiagnostics.Quote(result.Error)} pendente={result.Pending}");
                 if (!native) continue;
                 var translated = result.Text;
                 var loading = false;
@@ -212,6 +229,7 @@ internal sealed unsafe class GameTextCapture
                 }
                 textNode->SetText(layout.Bytes.AsSpan());
                 applied[address] = new(addonId, node->NodeId, original, source, translated, layout.Rendered, layout.Changes, loading);
+                if (diagnose) Diagnostics!.Record(address, "escrito", addonName, $"origem={HudDiagnostics.Quote(source)} texto={HudDiagnostics.Quote(layout.Rendered)}");
             }
             else if ((ushort)node->Type >= 1000)
             {

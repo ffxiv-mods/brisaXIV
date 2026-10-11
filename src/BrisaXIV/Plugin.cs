@@ -22,6 +22,9 @@ public sealed partial class Plugin : IDalamudPlugin
     [PluginService] internal static IAddonLifecycle Lifecycle { get; private set; } = null!;
     [PluginService] internal static IDataManager DataManager { get; private set; } = null!;
     [PluginService] internal static IObjectTable Objects { get; private set; } = null!;
+    [PluginService] internal static IGameGui GameGui { get; private set; } = null!;
+    [PluginService] internal static INamePlateGui NamePlateGui { get; private set; } = null!;
+    [PluginService] internal static ISeStringEvaluator Evaluator { get; private set; } = null!;
     private readonly Configuration config;
     private readonly TranslationFile file;
     private readonly TranslationProgress progress = new();
@@ -30,6 +33,13 @@ public sealed partial class Plugin : IDalamudPlugin
     private TranslationQueue queue;
     private TranslationQueue clientQueue;
     private TranslationRouter router;
+#if !BRISA_READ_ONLY
+    // Google Tradutor for what the main path cannot deliver; see TranslationRouter.
+    private FallbackQueues fallback;
+#endif
+    private readonly TranslationJournal journal;
+    private readonly HoveredTextSources hovered;
+    private readonly NamePlateTranslation namePlates;
     private readonly JapaneseSourceIndex originals;
     private readonly BackgroundPreparation preparation;
     private IReadOnlyList<CapturedWindow> windows = [];
@@ -83,6 +93,8 @@ public sealed partial class Plugin : IDalamudPlugin
             config.Version = 5;
             PluginInterface.SavePluginConfig(config);
         }
+        if (config.Version < 6)
+        { config.NamePlates = config.CharacterNames; config.Version = 6; PluginInterface.SavePluginConfig(config); }
 #if BRISA_READ_ONLY
         config.BackgroundPreparation = false;
         config.CachedOnly = true;
@@ -93,6 +105,7 @@ public sealed partial class Plugin : IDalamudPlugin
         var root = PluginInterface.IsDev ? packageRoot : PluginInterface.GetPluginConfigDirectory();
         if (!PluginInterface.IsDev) ImportPackageTranslations(packageRoot, root);
         file = new TranslationFile(Path.Combine(root, "traducoes.txt"));
+        if (!PluginInterface.IsDev) MergePackageTranslations(packageRoot, root);
         InitializeUsage(root);
 #if !BRISA_READ_ONLY
         if (config.EncryptedApiKey.Length == 0 && File.Exists(Path.Combine(packageRoot, "chave.dpapi")))
@@ -102,13 +115,19 @@ public sealed partial class Plugin : IDalamudPlugin
         try { openAIApiKey = KeyProtection.Unprotect(config.EncryptedOpenAIApiKey); }
         catch { uiError = "A chave OpenAI salva não pôde ser lida neste usuário do Windows. Informe-a novamente."; }
 #endif
+        journal = new TranslationJournal(Path.Combine(root, "traducoes-novas.txt"));
         queue = MakeQueue();
         clientQueue = MakeQueue(false);
+#if !BRISA_READ_ONLY
+        fallback = MakeFallback();
+#endif
         originals = new JapaneseSourceIndex(DataManager.GameData.DataPath.FullName, (Lumina.Data.Language)((int)ClientState.ClientLanguage + 1), root);
         preparation = new BackgroundPreparation(originals.Catalog, file, Path.Combine(root, "progresso-preparacao.json"));
+        hovered = new HoveredTextSources(GameGui, DataManager, Evaluator, ClientState.ClientLanguage);
         router = MakeRouter();
+        namePlates = new NamePlateTranslation(NamePlateGui, () => router, () => config.Enabled && config.NamePlates);
         quests = new QuestCatalog(DataManager);
-        Commands.AddHandler("/brisa", new CommandInfo(OnCommand) { HelpMessage = "Progresso: /brisa progresso. Custos da IA: /brisa custos. Configuração: /brisa. Leitura: /brisa ler. Todas as telas: /brisa tudo. Recarregar TXT: /brisa recarregar." });
+        Commands.AddHandler("/brisa", new CommandInfo(OnCommand) { HelpMessage = "Progresso: /brisa progresso. Custos da IA: /brisa custos. Configuração: /brisa. Leitura: /brisa ler. Todas as telas: /brisa tudo. Recarregar TXT: /brisa recarregar. Diagnóstico do diário: /brisa diagnostico." });
         PluginInterface.UiBuilder.DisableCutsceneUiHide = true;
         PluginInterface.UiBuilder.Draw += Draw;
         PluginInterface.UiBuilder.OpenConfigUi += OpenSettings;
@@ -130,18 +149,48 @@ public sealed partial class Plugin : IDalamudPlugin
             config.OpenAIRequestsPerMinute, config.OpenAITokensPerMinute), openAIRateLimiter: openAIRateLimiter, openAIDiagnostic: OpenAIDiagnostic, aiUsage: usageLedger.Record),
             capacity: Math.Max(128, parallel * 40), progress: progress, parallelism: parallel,
             concurrency: config.Provider == TranslationProvider.OpenAI ? concurrency : null,
-            retryPath: Path.Combine(Path.GetDirectoryName(file.Path)!, japanese ? "pendencias-ja.json" : "pendencias-cliente-" + ClientLanguageCode + ".json"));
+            retryPath: Path.Combine(Path.GetDirectoryName(file.Path)!, japanese ? "pendencias-ja.json" : "pendencias-cliente-" + ClientLanguageCode + ".json"),
+            // The Japanese queue also runs the bulk preparation; only on-screen client text is journaled.
+            stored: japanese ? null : journal.Append);
 #endif
     }
+#if !BRISA_READ_ONLY
+    private TranslationQueue MakeGoogleQueue(bool japanese) => new(file,
+        new Translator(new(TranslationProvider.Google, "", false, "", "", japanese ? "JA" : ClientLanguageCode, false)),
+        progress: progress,
+        retryPath: Path.Combine(Path.GetDirectoryName(file.Path)!, japanese ? "pendencias-google-ja.json" : "pendencias-google-" + ClientLanguageCode + ".json"),
+        stored: journal.Append);
+    private FallbackQueues MakeFallback() => new(MakeGoogleQueue(true), MakeGoogleQueue(false));
+#endif
     private bool DialoguePriorityEnabled =>
 #if BRISA_READ_ONLY
         false;
 #else
         config.PrioritizeDialogue && !preparation.Completed;
 #endif
-    private TranslationRouter MakeRouter() => new(queue, file, originals.Texts, config.JapaneseOriginals, config.TranslateUnmatched || !config.JapaneseOriginals ? clientQueue : null, config.CachedOnly || preparation.Completed, DialoguePriorityEnabled);
-    private void RetryErrors(bool resumePreparation = false) { shownBillingFailure = null; queue.RetryErrors(); clientQueue.RetryErrors(); if (resumePreparation) preparation.Resume(); }
-    private void RestartQueues() { shownBillingFailure = null; queue.Dispose(); clientQueue.Dispose(); concurrency.ClearBillingPause(); queue = MakeQueue(); clientQueue = MakeQueue(false); router = MakeRouter(); }
+    private TranslationRouter MakeRouter() => new(queue, file, originals.Texts, config.JapaneseOriginals, config.TranslateUnmatched || !config.JapaneseOriginals ? clientQueue : null, config.CachedOnly || preparation.Completed, DialoguePriorityEnabled,
+#if BRISA_READ_ONLY
+        null,
+#else
+        config.GoogleForMissing ? fallback : null,
+#endif
+        hovered);
+    private void RetryErrors(bool resumePreparation = false)
+    {
+        shownBillingFailure = null; queue.RetryErrors(); clientQueue.RetryErrors();
+#if !BRISA_READ_ONLY
+        fallback.Japanese.RetryErrors(); fallback.Client.RetryErrors();
+#endif
+        if (resumePreparation) preparation.Resume();
+    }
+    private void RestartQueues()
+    {
+        shownBillingFailure = null; queue.Dispose(); clientQueue.Dispose(); concurrency.ClearBillingPause(); queue = MakeQueue(); clientQueue = MakeQueue(false);
+#if !BRISA_READ_ONLY
+        fallback.Japanese.Dispose(); fallback.Client.Dispose(); fallback = MakeFallback();
+#endif
+        router = MakeRouter();
+    }
     private void OpenSettings() => settingsOpen = true;
     private void OpenReading() => readingOpen = true;
     private void OnCommand(string command, string args)
@@ -155,6 +204,14 @@ public sealed partial class Plugin : IDalamudPlugin
             case "jornal": config.Journal = !(config.Journal ?? config.Quests); PluginInterface.SavePluginConfig(config); break;
             case "recarregar": file.Reload(); RetryErrors(); break;
             case "tudo": config.Enabled = config.NativeHud = true; SetAllTextCategories(true); break;
+            case "diagnostico" or "diagnóstico":
+                capture.Diagnostics ??= new HudDiagnostics(Path.Combine(Path.GetDirectoryName(file.Path)!, "diagnostico-hud.log"));
+                capture.Diagnostics.Toggle();
+                settingsOpen = true;
+                uiError = capture.Diagnostics.Enabled
+                    ? "Diagnóstico do diário LIGADO. Reproduza o problema e use /brisa diagnostico de novo para desligar. Arquivo: " + capture.Diagnostics.Path
+                    : "Diagnóstico do diário desligado. Arquivo: " + capture.Diagnostics.Path;
+                break;
             default: settingsOpen = !settingsOpen; break;
         }
     }
@@ -175,8 +232,14 @@ public sealed partial class Plugin : IDalamudPlugin
         PumpPrefetch();
         try
         {
+            hovered.Refresh();
+            namePlates.Pump();
+            // Player-named companions (chocobo, race chocobo) are never treated as NPC names.
             capture.SetNpcNames(Objects.Where(x => x.ObjectKind is Dalamud.Game.ClientState.Objects.Enums.ObjectKind.EventNpc
-                or Dalamud.Game.ClientState.Objects.Enums.ObjectKind.BattleNpc).Select(x => x.Name.ToString()));
+                    or Dalamud.Game.ClientState.Objects.Enums.ObjectKind.BattleNpc
+                && x is not Dalamud.Game.ClientState.Objects.Types.IBattleNpc { BattleNpcKind: Dalamud.Game.ClientState.Objects.Enums.BattleNpcSubKind.Buddy
+                    or Dalamud.Game.ClientState.Objects.Enums.BattleNpcSubKind.Player or Dalamud.Game.ClientState.Objects.Enums.BattleNpcSubKind.RaceChocobo })
+                .Select(x => x.Name.ToString()));
             windows = capture.Scan(config, router);
             foreach (var dialogue in windows.Where(x => x.Category == "Falas"))
             {
@@ -401,8 +464,12 @@ public sealed partial class Plugin : IDalamudPlugin
         }
         if (Framework.IsInFrameworkUpdateThread) Restore();
         else _ = Framework.RunOnFrameworkThread(Restore);
+        namePlates.Dispose();
         queue.Dispose();
         clientQueue.Dispose();
+#if !BRISA_READ_ONLY
+        fallback.Japanese.Dispose(); fallback.Client.Dispose();
+#endif
         originals.Dispose();
         history.Clear(); apiKey = "";
 #if !BRISA_READ_ONLY

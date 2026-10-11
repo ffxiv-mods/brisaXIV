@@ -23,7 +23,7 @@ Brisa XIV é um plugin Dalamud (API 15, .NET 10, Windows x64) que traduz textos 
 - O projeto de testes compila só `Core/*.cs` e alguns arquivos da raiz (`KeyProtection`, `NativeTextContent`, `NativeTextLayout`, `JapaneseSourceIndex`) — não referencia Dalamud. Código testável deve ficar em `Core/` sem dependência de serviços Dalamud; se criar um novo arquivo fora de `Core/` que precise de teste, adicione-o ao `<Compile Include>` de `tests/BrisaXIV.Tests.csproj`.
 - Testes usam HTTP simulado e arquivos isolados; nunca chamam provedores reais.
 
-Outros scripts: `Instalar-No-Dalamud.ps1` (registra `plugin\BrisaXIV.dll` em DevPluginLoadLocations; exige o jogo fechado), `Restaurar-TXT-Inicial.ps1` (recompõe `data/traducoes-iniciais.zip.*` sem sobrescrever TXT existente), `Empacotar-Release.ps1` (gera `release/latest.zip` + `release/repo.json`), `Gerar-Somente-Leitura.ps1` (build final somente leitura). `Preparar-Publicacao.ps1` é o fluxo manual antigo (repo `BrisasXIV/BrisasXIV`), substituído pelo workflow.
+Outros scripts: `Instalar-No-Dalamud.ps1` (registra `plugin\BrisaXIV.dll` em DevPluginLoadLocations; exige o jogo fechado), `Restaurar-TXT-Inicial.ps1` (recompõe `data/traducoes-iniciais.zip.*` sem sobrescrever TXT existente), `Empacotar-Release.ps1` (gera `release/latest.zip` + `release/repo.json`), `Gerar-Somente-Leitura.ps1` (build final somente leitura), `Incorporar-Traducoes-Novas.ps1` (leva `traducoes-novas.txt` ao `plugin\traducoes.txt` publicado, só originais ausentes). `Preparar-Publicacao.ps1` é o fluxo manual antigo (repo `BrisasXIV/BrisasXIV`), substituído pelo workflow.
 
 **Release (git flow):** `git flow release start/finish ReleaseV<x.y.z>` cria a tag `ReleaseV<x.y.z>` (o prefixo de tag do git flow fica vazio). O push da tag dispara `.github/workflows/release.yml`, que:
 1. recusa tags fora do padrão ou que não estejam na `master`;
@@ -43,6 +43,8 @@ O `global.json` fixa o SDK .NET 10: o `NuGet.Config` desativa todas as fontes, e
 3. `SourceTextIndex`/`JapaneseSourceIndex` resolve o texto em inglês para o original japonês → fila japonesa com o original.
 4. Sem correspondência → `clientQueue` (traduz do idioma do cliente).
 
+Antes do índice, `HoveredTextSources` (descrição avaliada com `ISeStringEvaluator` da ação/item sob o cursor) resolve tooltips com macros. Nomes de NPC usam o escopo `SourceTextIndex.NamesScope`. O que o caminho principal não entrega (modo só TXT com original japonês, ou falha do provedor) vai para `FallbackQueues` (Google); essas filas e a `clientQueue` gravam também `traducoes-novas.txt` (`TranslationJournal`). Nomes sobre a cabeça: `NamePlateTranslation` (`INamePlateGui`).
+
 `TranslationQueue` faz lotes, prioridade (falas/HUD), deduplicação e retentativas (`TranslationRetry`, persistido em `pendencias-*.json`); chama `Translator` (partial: `Translator.cs`, `OpenAITranslation.cs`, `AIUsageObserver.cs`), limitado por `OpenAIRateLimiter` e `TranslationConcurrency`. O resultado é gravado no TXT e reescrito no nó nativo via `NativeTextContent`/`NativeTextLayout` (preservando payloads de cor/ícone e ajustando tamanho das caixas com `TextBoxLayout`).
 
 - `Plugin` é uma partial class dividida por área de UI ImGui: `Plugin.Dashboard.cs` (navegação/tema), `Plugin.Costs.cs`, `Plugin.Progress.cs`, `Plugin.Categories.cs`, `Plugin.BillingAlert.cs`, `Plugin.Storage.cs`. Comando `/brisa`.
@@ -54,7 +56,7 @@ O `global.json` fixa o SDK .NET 10: o `NuGet.Config` desativa todas as fontes, e
 ## Formato e dados
 
 - `traducoes.txt`: UTF-8, uma linha `original<TAB>tradução`, `#` é comentário, a **última ocorrência vence** (correções são anexadas, não reescritas). Escape/normalização em `TextRules`.
-- Em instalação dev os dados ficam ao lado da DLL (`plugin\`); instalada, em `GetPluginConfigDirectory()`. O TXT do pacote só é importado se não houver TXT nem `.bak`.
+- Em instalação dev os dados ficam ao lado da DLL (`plugin\`); instalada, em `GetPluginConfigDirectory()`. O TXT do pacote é copiado na primeira instalação; nas atualizações, `MergePackageTranslations` acrescenta só originais ausentes (uma vez por pacote, marcador `pacote-importado.txt`).
 - `plugin/traducoes.txt` (~100 MiB, resultado da tradução completa) **é versionado via Git LFS** (`.gitattributes`); não remova essa regra nem o tire do Git. Jogadores não usam o repositório: o Dalamud baixa o `latest.zip` anexado à Release (gerado por `Preparar-Publicacao.ps1`).
 - O resto de `plugin/` é privado ou gerado e fica ignorado (`*.dpapi` com chaves via DPAPI, `uso-ia.jsonl`, `custos-ia.json`, logs, progresso, pendências, índices `*.jsonl`, `.bak`, DLL/PDB de build). Nunca incluí-los em commits ou pacotes; `publicacao/` (exportações de release) e `work/` também são ignorados.
 - Estimativas de custo usam tokens informados pelo provedor × tarifas editáveis — nunca as reservas conservadoras do limitador TPM.
