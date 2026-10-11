@@ -1,5 +1,4 @@
 using BrisaXIV.Core;
-using Dalamud.Game;
 using Dalamud.Game.Gui;
 using Dalamud.Plugin.Services;
 using Lumina.Excel;
@@ -12,7 +11,7 @@ namespace BrisaXIV;
 // static index drops. For the action or item under the cursor, this evaluates the description in
 // the client language and in Japanese with the live player state, so the rendered tooltip maps
 // to its exact Japanese original. Refresh runs on the framework thread; lookups read a snapshot.
-internal sealed class HoveredTextSources(IGameGui gui, IDataManager data, ISeStringEvaluator evaluator, ClientLanguage client) : ISourceTextResolver
+internal sealed class HoveredTextSources(IGameGui gui, GameTextEvaluator texts) : ISourceTextResolver
 {
     private (DetailKind Kind, uint Action, uint Base, ulong Item) last;
     private volatile IReadOnlyDictionary<string, string> current = new Dictionary<string, string>();
@@ -47,16 +46,6 @@ internal sealed class HoveredTextSources(IGameGui gui, IDataManager data, ISeStr
 
     private void AddRow<T>(Dictionary<string, string> pairs, uint id, Func<T, ReadOnlySeString> text) where T : struct, IExcelRow<T>
     {
-        if (id == 0) return;
-        try
-        {
-            if (!data.GetExcelSheet<T>(client).TryGetRow(id, out var shown) || !data.GetExcelSheet<T>(ClientLanguage.Japanese).TryGetRow(id, out var original)) return;
-            var display = NativeTextContent.Extract(evaluator.Evaluate(text(shown), default, client).AsSpan());
-            var japanese = NativeTextContent.Extract(evaluator.Evaluate(text(original), default, ClientLanguage.Japanese).AsSpan());
-            if (TextRules.HasReadableText(display) && TextRules.ContainsJapanese(japanese)) pairs[SourceTextIndex.Key(display)] = japanese;
-        }
-        // A sheet missing in this client version or an unsupported macro only disables this lookup;
-        // it must never pause the whole HUD capture, which runs in the same framework update.
-        catch (Exception) { }
+        if (texts.TryPair(id, text, out var display, out var japanese)) pairs[SourceTextIndex.Key(display)] = japanese;
     }
 }

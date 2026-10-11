@@ -156,6 +156,16 @@ internal static class FallbackRoutingTests
         check(!injectedMap.TryGetOriginal("Olá, aventureiro!", out _) && injectedMap.TryGetOriginal("Terceira", out _),
             "The injected line memory forgets the oldest entries beyond its capacity");
 
+        // Prefetched quest and tooltip texts resolve the rendered English to the complete Japanese original.
+        var prefetchedSources = new PrefetchedSources(capacity: 3);
+        prefetchedSources.Add("Craft a plumed iron hatchet\nand deliver it.", "羽飾りの鉄斧を製作して届けよう。");
+        prefetchedSources.Add("Sem japonês", "Not Japanese");
+        var resolvers = new CompositeSourceResolver(new Live(new() { ["Hovered"] = "ホバー" }), prefetchedSources);
+        check(resolvers.TryResolve("Craft a plumed iron hatchet and deliver it.", "Missões", out var prefetchedOriginal) && prefetchedOriginal == "羽飾りの鉄斧を製作して届けよう。"
+            && resolvers.TryResolve("Hovered", "", out var hoveredOriginal) && hoveredOriginal == "ホバー"
+            && !resolvers.TryResolve("Sem japonês", "", out _) && prefetchedSources.Count == 1,
+            "Prefetched texts resolve rendered English (any wrapping) to the complete Japanese original after the hovered tooltip");
+
         // A Japanese line that pulls an item name from another sheet would lose it ("「」"): it is left out.
         var nameMacro = new byte[] { 2, (byte)Lumina.Text.Payloads.MacroCode.JaNoun, 2, 1, 3 }; // length 1 is encoded as 2
         var withItem = System.Text.Encoding.UTF8.GetBytes("「").Concat(nameMacro).Concat(System.Text.Encoding.UTF8.GetBytes("」を届けて")).ToArray();
